@@ -13,8 +13,8 @@
     "pipeline": "tsx src/cli.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "prettier --write \"{src,tests}/**/*.ts\" \"*.{ts,json}\"",
+    "format:check": "prettier --check \"{src,tests}/**/*.ts\" \"*.{ts,json}\""
   },
   "dependencies": {
     "@cursor/sdk": "1.0.35"
