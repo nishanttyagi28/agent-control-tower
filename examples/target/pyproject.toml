@@ -1,7 +1,7 @@
 [project]
 name = "textstats"
 version = "0.1.0"
-description = "Small text statistics helpers (example target for Agent Control Tower)."
+description = "Small text statistics helpers (example target for CodeGovernor)."
 requires-python = ">=3.12"
 dependencies = []
 

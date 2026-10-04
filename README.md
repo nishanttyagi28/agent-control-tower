@@ -1,4 +1,4 @@
-# Agent Control Tower
+# CodeGovernor: Agentic Coding Control Plane
 
 Hard boundaries, budgets and audit logs for coding agents driven by the Cursor SDK.
 
