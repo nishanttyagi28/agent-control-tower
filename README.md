@@ -1,19 +1,66 @@
 # Agent Control Tower
 
-A small, budgeted multi-agent workflow on top of the [Cursor TypeScript SDK](https://cursor.com/docs/api/sdk/typescript).
-A TypeScript orchestrator drives three local Cursor agents (**planner**, **coder** and
-**reviewer**) to build a tiny Python module from a one-line goal. `AGENTS.md` files govern how
-the agents work, and a hook plus the orchestrator enforce the rules that matter.
+Hard boundaries, budgets and audit logs for coding agents driven by the Cursor SDK.
 
-The point is the engineering around the agents:
-- least-privilege tool allowlists per role, with no shell for any agent
-- fail-closed hooks: a shell command allowlist and workspace-only reads
-- a deterministic gate: tests, files declared in the plan, coder paths inside the workspace
-- strict run and retry budgets, checkpointed retries, and a duplicate-failure abort
-- git checkpoints that restore the workspace on failure and keep the failed diff
-- validated JSON contracts between roles, with retry policy read from AGENTS.md
-- per-role models (all `composer-2.5` by default) and an opt-in `--interactive` mode
-- trimmed, redacted, committed run logs
+## The problem
+
+Coding agents follow instructions most of the time. "Most of the time" is not good enough
+when an agent has a shell and write access to a repository.
+
+I saw this in the first real run of this repo
+([`runs/2026-10-04T01-45-08Z/`](runs/2026-10-04T01-45-08Z/)). `AGENTS.md` and the coder
+prompt both said not to install packages. The coder's shell could not find pytest, so it ran
+`pip3 install pytest --break-system-packages` and tried `apt-get install`. The reviewer had
+read-only tools and saw only the plan and the test output, so nothing in the pipeline could
+notice. The tests passed and the run was reported as PASS.
+
+That run shows the general problems:
+
+- **Prompts are advisory.** `AGENTS.md` and system prompts shape behaviour, but nothing
+  stops an agent from ignoring them when it hits an obstacle.
+- **Retry loops burn quota.** A reviewer that keeps saying FAIL and a coder that keeps
+  retrying can consume a plan's usage without making progress.
+- **Reviewers cannot see what agents did.** A reviewer that reads the final files does not see
+  the commands that ran, the files that were read outside the project, or what changed between
+  attempts.
+- **Agent runs are hard to audit and reproduce.** Streaming output is large, can contain secrets,
+  and is usually thrown away.
+
+## Why I built this
+
+I wanted a small, auditable pattern for running Cursor SDK agents under hard boundaries, on a
+Cursor Pro plan budget, before starting a larger inference-engineering project where agents
+will do more of the work. The goal is not a framework. It is one pipeline (planner, coder,
+reviewer) where every rule that matters is enforced by code or configuration rather than by a
+sentence in a prompt, and where every run leaves a record I can read afterwards.
+
+## What it does differently
+
+| Problem | Mechanism in this repo |
+|---|---|
+| Agents ignore "do not install" or "do not run X" | No role gets a shell tool. Fail-closed `beforeShellExecution` hook allowlists `python -m pytest\|compileall` in case a shell is re-enabled. |
+| Agents read files they should not see | Per-role tool allowlists. Fail-closed `beforeReadFile` hook denies reads outside the workspace. The orchestrator fails any coder tool call whose path is outside the workspace. |
+| Reviewer verdicts are just model output | Deterministic gate in TypeScript: failing tests, a changed file not declared in the plan, or an out-of-workspace coder path forces FAIL. |
+| Retry loops burn quota | Run budget checked before the first run (`1 + maxTasks + 1 + 2*maxRetries <= maxRuns`, 6 by default) and enforced per run. A retry that repeats earlier failure reasons stops with `DUPLICATE_FAILURE`. |
+| Failed attempts leave a dirty workspace | Git checkpoints under `refs/cursor-demo/` (HEAD, branches and index untouched). On any non-PASS outcome the workspace is restored and the attempt is kept as `failed.diff`. |
+| Reviewer cannot see what happened | Reviewer prompt includes the workspace diff, the diff since its last review, and every coder tool call. |
+| Runs cannot be audited | Per-run logs with the prompt, each tool call (args redacted and cut to 200 chars), final text, model and token usage, committed under `runs/`. |
+
+## Evidence
+
+Two real runs, both with `composer-2.5` (`fast=false`) and the default budget. Full tables are
+in [Sample runs](#sample-runs) below. Both used earlier versions of the orchestrator: run 1
+predates the hooks and the gate changes, and run 2 predates checkpoints, the duplicate-failure
+abort, the read hook and per-role models.
+
+| Run | Workspace | Outcome | Agent runs | Total tokens | Est. cost | Logs |
+|---|---|---|---:|---:|---:|---|
+| 1 | `examples/target` | PASS on first review | 4 | 477,882 | $0.19 | [`runs/2026-10-04T01-45-08Z/`](runs/2026-10-04T01-45-08Z/) |
+| 2 | `examples/target-hidden-spec` | FAIL, one retry, then PASS | 6 | 727,269 | $0.29 | [`runs/2026-10-04T02-09-42Z/`](runs/2026-10-04T02-09-42Z/) |
+
+Run 1 is where the `pip3 install` violation happened. Run 2 was designed to fail first: hidden
+acceptance tests require one behaviour the goal does not mention, and the single retry fixed it.
+Costs are list-price estimates of plan usage, not invoices.
 
 ## Architecture
 
@@ -38,14 +85,8 @@ flowchart LR
 On FAIL, the coder gets only the unresolved reasons and the test output for a retry (one by
 default), continuing from the checkpointed workspace, and the reviewer runs again. If a retry
 repeats the same failure, the pipeline stops with `DUPLICATE_FAILURE`. If the run does not
-PASS, the workspace is restored and `runs/<ts>/failed.diff` keeps what was tried. More detail is in [docs/architecture.md](docs/architecture.md). The decisions are in
-the ADRs:
-- [0001](docs/adr/0001-local-agents-over-cloud.md): local agents
-- [0002](docs/adr/0002-run-budget.md): run budget
-- [0003](docs/adr/0003-enforce-policy-in-hooks.md): enforce policy in hooks and the orchestrator,
-  not prompts
-- [0004](docs/adr/0004-per-role-model-tiering.md): per-role models and the cost/quality
-  trade-off
+PASS, the workspace is restored and `runs/<ts>/failed.diff` keeps what was tried. More detail
+is in [docs/architecture.md](docs/architecture.md).
 
 ## Repository layout
 
@@ -53,14 +94,14 @@ the ADRs:
 src/                          orchestrator (pipeline, Cursor runner, gate, venv, logs, CLI)
 prompts/                      planner.md, coder.md, reviewer.md
 tests/                        vitest unit tests: scripted fake agent, real hook scripts, temp git repos
-examples/target/              workspace 1 (textstats), own AGENTS.md and shell hook
-examples/target-hidden-spec/  workspace 2 (durations), goal omits one requirement
+examples/target/              workspace 1 (textstats), own AGENTS.md and shell/read hooks
+examples/target-hidden-spec/  workspace 2 (durations), goal omits one requirement, same hooks
 examples/acceptance/          hidden acceptance tests, outside every workspace
 runs/                         committed, trimmed logs of real runs
 docs/                         architecture and ADRs
 ```
 
-## Running it
+## Quickstart
 
 Requirements: Node.js >= 22.13, Python 3.12+ with the `venv` module, and a Cursor user API key
 (Dashboard -> API Keys). The orchestrator creates `<workspace>/.venv` and installs pytest
@@ -76,6 +117,8 @@ npm run pipeline -- --workspace examples/target-hidden-spec \
   --acceptance examples/acceptance/target-hidden-spec
 npm run pipeline -- --help
 ```
+
+## Configuration
 
 The pipeline refuses to start if the workspace has uncommitted changes, so the reviewed diff
 contains only what the agents changed. Other options (`--help` lists them all):
@@ -131,7 +174,8 @@ Estimated cost: **$0.19**. Result: 10 tests pass.
 ### Run 2: `examples/target-hidden-spec`, FAIL then retry then PASS
 
 2026-10-04, 07:39 IST, logs in [`runs/2026-10-04T02-09-42Z/`](runs/2026-10-04T02-09-42Z/).
-This is the current orchestrator: no shell for any agent, venv interpreter, diff and scope gate.
+This used the orchestrator after the run-1 fixes: no shell for any agent, venv interpreter,
+diff and scope gate.
 
 | # | Run | Status | Total tokens | Input | Cache read | Output | Time |
 |---|-----|--------|-------------:|------:|-----------:|-------:|-----:|
@@ -196,9 +240,34 @@ above are from the earlier orchestrator.
   reviewer#1 reading the hidden tests, if the SDK applies it.
 - grep/glob calls are logged with their pattern, not just the folder.
 
-Still open: confirming that the SDK actually runs project hooks (`beforeShellExecution`,
-`beforeReadFile`) for local agents. The orchestrator's own path check does not depend on that.
+## Limitations and unverified
+
+- **Hooks are not live-verified.** The SDK docs say local agents load project hooks from
+  `.cursor/hooks.json`, but no real run has exercised `beforeShellExecution` or
+  `beforeReadFile` yet. No role has a shell, so the shell hook cannot fire. Hook behaviour is
+  covered by unit tests that run the real scripts. The orchestrator's own path check does not
+  depend on hooks.
+- **`beforeReadFile` covers file reads only.** Per the docs it does not see grep or glob. For
+  the planner and reviewer, a grep or glob outside the workspace is only visible in the logs.
+- **Hidden tests are not truly hidden.** In run 2 the planner searched for them and reviewer#1
+  read them from the path in the test output. The read hook and the coder path check address
+  this, but neither has been exercised in a real run.
+- **Features after run 2 are unit-tested only.** The checkpoints, the duplicate-failure abort,
+  `--interactive`, per-role models and the `AGENTS.md` retry policy have no real-run evidence yet.
+- **Tool-call args are an unstable SDK shape.** The path check reads keys such as `path` and
+  `targetDirectory`. A tool that names paths differently would not be checked.
+- **Costs are estimates.** `agent.getUsage()` was not available on the account used, and only
+  `composer-2.5` has a verified list price in `MODEL_PRICES`.
+
+## Design decisions
+
+- [ADR 0001](docs/adr/0001-local-agents-over-cloud.md): local agents
+- [ADR 0002](docs/adr/0002-run-budget.md): run budget
+- [ADR 0003](docs/adr/0003-enforce-policy-in-hooks.md): enforce policy in hooks and the
+  orchestrator, not prompts
+- [ADR 0004](docs/adr/0004-per-role-model-tiering.md): per-role models and the cost/quality
+  trade-off
 
 ## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
