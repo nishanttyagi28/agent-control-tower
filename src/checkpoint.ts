@@ -7,7 +7,7 @@ export interface Checkpoint {
   label: string;
   /** Commit object holding the workspace state (parent: HEAD at checkpoint time). */
   commit: string;
-  /** Ref that keeps the commit reachable, e.g. refs/cursor-demo/<run>/review-1. */
+  /** Ref that keeps the commit reachable, e.g. refs/codegovernor/<run>/review-1. */
   ref: string;
 }
 
@@ -24,7 +24,7 @@ export interface WorkspaceCheckpointer {
  *
  * Each checkpoint stages the workspace into a throwaway index file (GIT_INDEX_FILE), writes
  * a tree, wraps it in a dangling commit with `commit-tree`, and pins it under
- * `refs/cursor-demo/<run>/<label>`. Branches are untouched and nothing is pushed. Ignored
+ * `refs/codegovernor/<run>/<label>`. Branches are untouched and nothing is pushed. Ignored
  * files (.venv, caches) are not captured and are never deleted by restore.
  */
 export function gitCheckpointer(workspace: string, namespace: string): WorkspaceCheckpointer {
@@ -39,12 +39,15 @@ export function gitCheckpointer(workspace: string, namespace: string): Workspace
         await git(["add", "-A", "--", "."], env);
         const tree = (await git(["write-tree"], env)).trim();
         const commit = (
-          await git(["commit-tree", tree, "-p", "HEAD", "-m", `cursor-demo checkpoint: ${label}`], {
-            GIT_AUTHOR_NAME: "cursor-demo",
-            GIT_AUTHOR_EMAIL: "cursor-demo@localhost",
-            GIT_COMMITTER_NAME: "cursor-demo",
-            GIT_COMMITTER_EMAIL: "cursor-demo@localhost",
-          })
+          await git(
+            ["commit-tree", tree, "-p", "HEAD", "-m", `codegovernor checkpoint: ${label}`],
+            {
+              GIT_AUTHOR_NAME: "codegovernor",
+              GIT_AUTHOR_EMAIL: "codegovernor@localhost",
+              GIT_COMMITTER_NAME: "codegovernor",
+              GIT_COMMITTER_EMAIL: "codegovernor@localhost",
+            },
+          )
         ).trim();
         const ref = `${namespace}/${label}`;
         await git(["update-ref", ref, commit]);

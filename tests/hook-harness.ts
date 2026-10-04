@@ -13,7 +13,7 @@ interface HookDef {
 }
 
 /**
- * Evaluates a workspace's permission hooks the way Cursor documents it
+ * Evaluates a workspace's permission hooks the way the hooks docs describe it
  * (https://cursor.com/docs/agent/hooks): each matching hook gets JSON on stdin and runs
  * from the project root; exit 2 denies; exit 0 must print a valid response or the action is
  * blocked; other failures pass unless failClosed. deny > ask > allow. With no hooks a

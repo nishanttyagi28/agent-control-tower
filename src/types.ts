@@ -44,7 +44,7 @@ export interface RoleRunResult {
   runId?: string;
 }
 
-/** The only seam between the orchestrator and Cursor. Tests use a fake. */
+/** The only seam between the orchestrator and the agent runtime. Tests use a fake. */
 export interface AgentRunner {
   run(request: RoleRunRequest): Promise<RoleRunResult>;
 }

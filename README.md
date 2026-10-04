@@ -1,6 +1,8 @@
 # CodeGovernor: Agentic Coding Control Plane
 
-Hard boundaries, budgets and audit logs for coding agents driven by the Cursor SDK.
+Hard boundaries, budgets and audit logs for coding agents.
+
+Runtime: `@cursor/sdk` (local agents only).
 
 ## The problem
 
@@ -28,11 +30,12 @@ That run shows the general problems:
 
 ## Why I built this
 
-I wanted a small, auditable pattern for running Cursor SDK agents under hard boundaries, on a
-Cursor Pro plan budget, before starting a larger inference-engineering project where agents
-will do more of the work. The goal is not a framework. It is one pipeline (planner, coder,
-reviewer) where every rule that matters is enforced by code or configuration rather than by a
-sentence in a prompt, and where every run leaves a record I can read afterwards.
+I wanted a small, auditable pattern for running SDK-driven coding agents under hard
+boundaries, within the usage of a single individual plan, before starting a larger
+inference-engineering project where agents will do more of the work. The goal is not a
+framework. It is one pipeline (planner, coder, reviewer) where every rule that matters is
+enforced by code or configuration rather than by a sentence in a prompt, and where every run
+leaves a record I can read afterwards.
 
 ## What it does differently
 
@@ -42,7 +45,7 @@ sentence in a prompt, and where every run leaves a record I can read afterwards.
 | Agents read files they should not see | Per-role tool allowlists. Fail-closed `beforeReadFile` hook denies reads outside the workspace. The orchestrator fails any coder tool call whose path is outside the workspace. |
 | Reviewer verdicts are just model output | Deterministic gate in TypeScript: failing tests, a changed file not declared in the plan, or an out-of-workspace coder path forces FAIL. |
 | Retry loops burn quota | Run budget checked before the first run (`1 + maxTasks + 1 + 2*maxRetries <= maxRuns`, 6 by default) and enforced per run. A retry that repeats earlier failure reasons stops with `DUPLICATE_FAILURE`. |
-| Failed attempts leave a dirty workspace | Git checkpoints under `refs/cursor-demo/` (HEAD, branches and index untouched). On any non-PASS outcome the workspace is restored and the attempt is kept as `failed.diff`. |
+| Failed attempts leave a dirty workspace | Git checkpoints under `refs/codegovernor/` (HEAD, branches and index untouched). On any non-PASS outcome the workspace is restored and the attempt is kept as `failed.diff`. |
 | Reviewer cannot see what happened | Reviewer prompt includes the workspace diff, the diff since its last review, and every coder tool call. |
 | Runs cannot be audited | Per-run logs with the prompt, each tool call (args redacted and cut to 200 chars), final text, model and token usage, committed under `runs/`. |
 
@@ -70,7 +73,7 @@ flowchart LR
     subgraph O[Orchestrator - src/pipeline.ts]
         B[Budget: 6 runs, 1 retry, 8 min/run]
         G[Gate: tests + plan scope + coder paths]
-        K[Checkpoints: refs/cursor-demo]
+        K[Checkpoints: refs/codegovernor]
     end
     O -->|goal| P[planner<br/>read-only]
     P -->|JSON plan + files| O
@@ -91,7 +94,7 @@ is in [docs/architecture.md](docs/architecture.md).
 ## Repository layout
 
 ```text
-src/                          orchestrator (pipeline, Cursor runner, gate, venv, logs, CLI)
+src/                          orchestrator (pipeline, agent runner, gate, venv, logs, CLI)
 prompts/                      planner.md, coder.md, reviewer.md
 tests/                        vitest unit tests: scripted fake agent, real hook scripts, temp git repos
 examples/target/              workspace 1 (textstats), own AGENTS.md and shell/read hooks
@@ -103,9 +106,9 @@ docs/                         architecture and ADRs
 
 ## Quickstart
 
-Requirements: Node.js >= 22.13, Python 3.12+ with the `venv` module, and a Cursor user API key
-(Dashboard -> API Keys). The orchestrator creates `<workspace>/.venv` and installs pytest
-there. Agents never install anything.
+Requirements: Node.js >= 22.13, Python 3.12+ with the `venv` module, and a user API key for
+the agent runtime (Dashboard -> API Keys). The orchestrator creates `<workspace>/.venv` and
+installs pytest there. Agents never install anything.
 
 ```bash
 npm ci
@@ -132,14 +135,14 @@ contains only what the agents changed. Other options (`--help` lists them all):
 | `--model`, `--planner-model`, `--coder-model`, `--reviewer-model` | composer-2.5, fast=false | Per-role models (ADR 0004); also `PLANNER_MODEL` etc. |
 
 Retry defaults come from the `json retry-policy` block in [AGENTS.md](AGENTS.md#6-retry-policy).
-Flags override it. Checkpoints are local refs under `refs/cursor-demo/`. List them with
-`git for-each-ref refs/cursor-demo` and delete them with `git update-ref -d <ref>`.
+Flags override it. Checkpoints are local refs under `refs/codegovernor/`. List them with
+`git for-each-ref refs/codegovernor` and delete them with `git update-ref -d <ref>`.
 
 ## Cost notes
 
-- Every run uses `composer-2.5` with `fast=false`. It is the cheapest model in Cursor's
-  "Cursor Models" usage pool. At list price it costs $0.50 per 1M input tokens, $0.20 per 1M
-  cache-read tokens and $2.50 per 1M output tokens
+- Every run uses `composer-2.5` with `fast=false`. It is the cheapest model in the agent
+  runtime's included model usage pool. At list price it costs $0.50 per 1M input tokens,
+  $0.20 per 1M cache-read tokens and $2.50 per 1M output tokens
   ([pricing](https://cursor.com/docs/account/pricing)).
 - SDK runs bill like IDE runs. A user API key draws from that user's plan, and the dashboard
   tags the usage "SDK". The printed cost is a list-price estimate of pool consumption, not an

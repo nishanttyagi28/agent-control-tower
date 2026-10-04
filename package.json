@@ -2,7 +2,7 @@
   "name": "codegovernor",
   "version": "0.1.0",
   "private": true,
-  "description": "A small planner/coder/reviewer pipeline that drives local Cursor agents via @cursor/sdk, governed by AGENTS.md.",
+  "description": "A small planner/coder/reviewer pipeline that drives local coding agents via @cursor/sdk, governed by AGENTS.md.",
   "license": "MIT",
   "author": "Nishant Tyagi",
   "type": "module",

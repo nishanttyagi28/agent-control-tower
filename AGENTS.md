@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI coding agents (Cursor, Claude Code, Codex, and others) working on this
+Instructions for AI coding agents (Claude Code, Codex, and others) working on this
 repository. Humans should read it too: it is the contract for how changes are made here.
 
 Each workspace under `examples/` (`target/`, `target-hidden-spec/`) has its own `AGENTS.md`
@@ -9,7 +9,7 @@ and `.cursor/hooks.json`. Inside a workspace, its `AGENTS.md` governs and this o
 
 ## 1. Project overview
 
-A small TypeScript orchestrator that drives local Cursor agents through `@cursor/sdk` in a
+A small TypeScript orchestrator that drives local coding agents through `@cursor/sdk` in a
 planner -> coder -> reviewer pipeline, with hard run and token budgets. The example target is
 a tiny Python module built from a one-line goal.
 
@@ -51,7 +51,7 @@ Never run `npm run pipeline` unless the human asked for a real run in this sessi
 - TypeScript `strict` with `noUncheckedIndexedAccess`. No `any`, no non-null assertions on
   data that came from a model.
 - All budgets, prices, and defaults live in `src/config.ts`. No magic numbers elsewhere.
-- Everything that talks to Cursor goes through the `AgentRunner` interface in `src/types.ts`.
+- Everything that talks to the agent runtime goes through the `AgentRunner` interface in `src/types.ts`.
   Only `src/cursor-runner.ts` imports runtime values from `@cursor/sdk`.
 - Model output is untrusted input: parse and validate it (`src/parse.ts`), never `eval` it.
 - Enforce policy in code or hooks, not prompts (ADR 0003). No role gets a shell tool.

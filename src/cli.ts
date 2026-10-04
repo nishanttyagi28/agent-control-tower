@@ -136,8 +136,8 @@ async function main(): Promise<number> {
     }),
     runTests: shellTestRunner(testCommand),
     inspectWorkspace: gitWorkspaceInspector,
-    // Local refs only (refs/cursor-demo/...); branches, index and HEAD are never touched.
-    checkpoints: gitCheckpointer(workspace, `refs/cursor-demo/${stamp}`),
+    // Local refs only (refs/codegovernor/...); branches, index and HEAD are never touched.
+    checkpoints: gitCheckpointer(workspace, `refs/codegovernor/${stamp}`),
     ...(values.interactive ? { approve: promptApprover(process.stdin, process.stdout) } : {}),
     confirmThreshold: policy.confirmThreshold,
     duplicateFailure: policy.duplicateFailure,

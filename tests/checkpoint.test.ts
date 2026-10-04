@@ -47,7 +47,7 @@ describe("gitCheckpointer (real git, temp repo)", () => {
   it("checkpoints without touching HEAD, branches or the index, and diffs between checkpoints", async () => {
     const { ws, git } = tempRepo();
     const head = git("rev-parse", "HEAD");
-    const cp = gitCheckpointer(ws, "refs/cursor-demo/test");
+    const cp = gitCheckpointer(ws, "refs/codegovernor/test");
 
     const base = await cp.checkpoint("base");
     writeFileSync(join(ws, "a.py"), "x = 2\n");
@@ -59,8 +59,8 @@ describe("gitCheckpointer (real git, temp repo)", () => {
     expect(git("rev-parse", "HEAD")).toBe(head);
     expect(git("branch", "--list")).toBe("* main\n");
     expect(git("diff", "--cached", "--name-only")).toBe(""); // real index untouched
-    expect(git("for-each-ref", "--format=%(refname)", "refs/cursor-demo")).toBe(
-      "refs/cursor-demo/test/base\nrefs/cursor-demo/test/review-1\nrefs/cursor-demo/test/review-2\n",
+    expect(git("for-each-ref", "--format=%(refname)", "refs/codegovernor")).toBe(
+      "refs/codegovernor/test/base\nrefs/codegovernor/test/review-1\nrefs/codegovernor/test/review-2\n",
     );
 
     const sinceLast = await cp.diff(r1, r2);
@@ -73,7 +73,7 @@ describe("gitCheckpointer (real git, temp repo)", () => {
 
   it("restores the pre-pipeline state, keeps ignored files and leaves outside files alone", async () => {
     const { repo, ws, git } = tempRepo();
-    const cp = gitCheckpointer(ws, "refs/cursor-demo/test");
+    const cp = gitCheckpointer(ws, "refs/codegovernor/test");
     const base = await cp.checkpoint("base");
 
     writeFileSync(join(ws, "a.py"), "broken\n");
@@ -92,7 +92,7 @@ describe("gitCheckpointer (real git, temp repo)", () => {
     expect(readFileSync(join(repo, "outside.txt"), "utf8")).toBe("user edit\n");
     expect(git("status", "--porcelain", "--", "examples/t")).toBe("");
     expect(existsSync(join(ws, "tests"))).toBe(false); // emptied dirs are removed too
-    expect(git("for-each-ref", "--format=%(refname)", "refs/cursor-demo")).toContain(
+    expect(git("for-each-ref", "--format=%(refname)", "refs/codegovernor")).toContain(
       "pre-restore-base",
     );
   });

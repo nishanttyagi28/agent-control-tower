@@ -24,7 +24,7 @@ export interface Price {
   output: number;
 }
 
-// Cheapest model in the Cursor Models pool. "fast" is pinned off because the SDK
+// Cheapest model in the runtime's included model pool. "fast" is pinned off because the SDK
 // otherwise uses the first allowed value of every unspecified model parameter.
 export const DEFAULT_MODEL: ModelSelection = {
   id: "composer-2.5",
@@ -86,7 +86,7 @@ export const DEFAULT_BUDGET: Budget = {
 };
 
 // List price for composer-2.5 from https://cursor.com/docs/account/pricing (checked 2026-10-04).
-// On Pro, usage is drawn from the included Cursor Models pool, so this is an estimate of
+// On an individual plan, usage is drawn from the included model pool, so this is an estimate of
 // pool consumption, not an invoice amount.
 export const COMPOSER_25_PRICE: Price = { input: 0.5, cacheRead: 0.2, cacheWrite: 0, output: 2.5 };
 

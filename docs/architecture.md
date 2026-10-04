@@ -12,7 +12,7 @@
 | `src/budget.ts`, `src/config.ts` | Run cap, timeouts, per-role models (`RoleModels`), verified list prices. |
 | `src/policy.ts` | Parses the `json retry-policy` block in AGENTS.md; flag > AGENTS.md > default. |
 | `src/retry.ts` | Reason normalisation, checkpointed retry reasons, `FailureTracker` (duplicate-failure detection). |
-| `src/checkpoint.ts` | Git checkpoints under `refs/cursor-demo/<run>/` via a throwaway index; diff between checkpoints; restore. |
+| `src/checkpoint.ts` | Git checkpoints under `refs/codegovernor/<run>/` via a throwaway index; diff between checkpoints; restore. |
 | `src/approve.ts` | `--interactive` y/n prompt and the budget-threshold rule. |
 | `src/tool-scope.ts` | Coder tool-call summary for the reviewer and the deterministic "stayed inside the workspace" check. |
 | `src/test-runner.ts` | Creates/reuses `<workspace>/.venv`, installs pytest, runs tests with the absolute venv python (plus optional hidden acceptance tests). |
@@ -72,10 +72,10 @@ sequenceDiagram
   allowlists `python -m pytest|compileall`, and `beforeReadFile` denies reads outside the
   workspace (ADR 0003).
 - **Recoverable workspace.** Checkpoints are dangling commits pinned under
-  `refs/cursor-demo/<run>/`. They are built from a temporary index, so HEAD, branches and the
+  `refs/codegovernor/<run>/`. They are built from a temporary index, so HEAD, branches and the
   user's index are untouched, and nothing is pushed. On any non-PASS outcome the workspace's
   working tree is restored to `base`, and the failed state stays inspectable
-  (`git diff refs/cursor-demo/<run>/base refs/cursor-demo/<run>/failed`).
+  (`git diff refs/codegovernor/<run>/base refs/codegovernor/<run>/failed`).
 - **Checkpointed retries.** A retry continues from the current workspace and sees only the
   latest unresolved reasons. The reviewer sees the full diff and the diff since its last review.
 - **Policy in files.** Retry defaults live in a machine-readable block in AGENTS.md. Per-role

@@ -6,9 +6,9 @@ Status: Accepted
 ## Context
 
 `@cursor/sdk` offers two runtimes behind one `Agent.create` call: local (agent loop runs in this
-Node process, files come from disk) and cloud (Cursor-hosted VM with the repo cloned in). Model
-inference is hosted by Cursor in both. The owner's plan (Cursor Pro) is used for this demo and
-cost must stay small and predictable.
+Node process, files come from disk) and cloud (provider-hosted VM with the repo cloned in). Model
+inference is hosted by the provider in both. The owner's individual paid plan is used for this
+project and cost must stay small and predictable.
 
 ## Decision
 
@@ -19,7 +19,7 @@ path passes `cloud`.
 
 - **Cloud agents.** Isolation, parallelism, and survival across disconnects, but they need a
   connected GitHub repo, spin up VMs, and are not part of the plan this demo targets.
-- **Cursor CLI in a subprocess.** Workable, but stream parsing and usage accounting would be
+- **The agent runtime's CLI in a subprocess.** Workable, but stream parsing and usage accounting would be
   hand-rolled instead of typed (`RunResult.usage`, `SDKMessage`).
 
 ## Consequences
