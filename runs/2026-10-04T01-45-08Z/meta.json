@@ -1,0 +1,21 @@
+{
+  "startedAt": "2026-10-04T01:45:08.980Z",
+  "goal": "Build `textstats`, a stdlib-only Python module with `word_count(text)`, `sentence_count(text)`, `top_words(text, n=5)` and `reading_time_minutes(text, wpm=200)`, covered by pytest tests.",
+  "workspace": "/workspace/cursor-multiagent-demo/examples/target",
+  "model": {
+    "id": "composer-2.5",
+    "params": [
+      {
+        "id": "fast",
+        "value": "false"
+      }
+    ]
+  },
+  "budget": {
+    "maxRuns": 6,
+    "maxRetries": 1,
+    "maxTasks": 2,
+    "runTimeoutMs": 480000
+  },
+  "testCommand": "python3 -m pytest -q"
+}
