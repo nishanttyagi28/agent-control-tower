@@ -13,6 +13,7 @@ import {
 } from "./config.js";
 import { parsePlan, parseReview, ParseError } from "./parse.js";
 import { render, type PromptSet } from "./prompts.js";
+import { ROLE_TOOLS, type ToolPolicy } from "./roles.js";
 import {
   checkpointReasons,
   DEFAULT_DUPLICATE_FAILURE,
@@ -22,6 +23,7 @@ import {
 } from "./retry.js";
 import { tail } from "./text.js";
 import { truncate } from "./tool-calls.js";
+import { policyEvents, validateRoleTools, type PolicyEvent } from "./tool-gate.js";
 import { coderPathViolations, coderToolCallsSummary } from "./tool-scope.js";
 import type {
   AgentRunner,
@@ -90,6 +92,10 @@ export interface PipelineOptions {
   /** Abort when a retry repeats earlier failures. Default: enabled, 0.8 overlap. */
   duplicateFailure?: DuplicateFailurePolicy;
   sink?: RunSink;
+  /** Per-role tool allowlists. Default: ROLE_TOOLS. */
+  roleTools?: Record<Role, ToolPolicy>;
+  /** Orchestrator-approved shell commands; empty means shell tools are rejected. */
+  commandAllowlist?: readonly string[];
 }
 
 export interface PipelineReport {
@@ -108,6 +114,7 @@ export interface PipelineReport {
   estCostUsd: number;
   /** Models used without a known price; their runs are not in estCostUsd. */
   unpricedModels: string[];
+  policyEvents: PolicyEvent[];
 }
 
 class RunFailedError extends Error {
@@ -132,6 +139,8 @@ class PolicyViolationError extends Error {
  */
 export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport> {
   validateBudget(opts.budget);
+  const roleTools = opts.roleTools ?? ROLE_TOOLS;
+  const commandAllowlist = opts.commandAllowlist ?? [];
   const budget = new RunBudget(opts.budget.maxRuns);
   const runs: RunRecord[] = [];
   const reviews: Review[] = [];
@@ -252,8 +261,16 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       checkpointRefs: refs,
       usage,
       ...costOf(runs),
+      policyEvents: policyEvents(
+        runs.map((r) => ({ role: r.role, label: r.label, calls: r.result.toolCalls })),
+      ),
     };
   };
+
+  const toolGateMessages = validateRoleTools(roleTools, commandAllowlist);
+  if (toolGateMessages.length > 0) {
+    return finish("ERROR", toolGateMessages.join("; "));
+  }
 
   try {
     // A clean start makes "what changed" exactly "what the agents changed".

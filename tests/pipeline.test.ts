@@ -1,6 +1,8 @@
+import type { ToolName } from "@cursor/sdk";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BUDGET, type Budget } from "../src/config.js";
 import { gateReview, runPipeline, type RunRecord } from "../src/pipeline.js";
+import { ROLE_TOOLS } from "../src/roles.js";
 import {
   GREEN,
   IN_SCOPE,
@@ -223,6 +225,70 @@ describe("workspace diff and scope gate", () => {
     const runner = new ScriptedRunner([ok(planJson(1)), ok("a"), ok(review("PASS"))]);
     await withWorkspace(runner, IN_SCOPE);
     expect(runner.requests[1]?.prompt).toBe("code T1 task 1: do it files=f1.py, tests/test_f.py");
+  });
+
+  it("returns ERROR before any run when roleTools allow shell without a command allowlist", async () => {
+    const runner = new ScriptedRunner([]);
+    const report = await runPipeline({
+      goal: "g",
+      workspace: "/ws",
+      testCommand: "pytest",
+      runner,
+      runTests: scriptedTests([]),
+      inspectWorkspace: workspaceAfter(IN_SCOPE).inspect,
+      prompts: PROMPTS,
+      budget: DEFAULT_BUDGET,
+      roleTools: {
+        ...ROLE_TOOLS,
+        coder: { tools: ["read", "edit", "shell"] as ToolName[] },
+      },
+    });
+    expect(report.outcome).toBe("ERROR");
+    expect(report.message).toContain("CG-GATE-001");
+    expect(report.runs).toHaveLength(0);
+    expect(runner.requests).toHaveLength(0);
+  });
+
+  it("proceeds when shell is allowed and commandAllowlist is set", async () => {
+    const runner = new ScriptedRunner([ok(planJson(1)), ok("a"), ok(review("PASS"))]);
+    const report = await runPipeline({
+      goal: "g",
+      workspace: "/ws",
+      testCommand: "pytest",
+      runner,
+      runTests: scriptedTests([GREEN]),
+      inspectWorkspace: workspaceAfter(IN_SCOPE).inspect,
+      prompts: PROMPTS,
+      budget: DEFAULT_BUDGET,
+      roleTools: {
+        ...ROLE_TOOLS,
+        coder: { tools: ["read", "edit", "shell"] as ToolName[] },
+      },
+      commandAllowlist: ["python3 -m pytest"],
+    });
+    expect(report.outcome).toBe("PASS");
+    expect(runner.requests.length).toBeGreaterThan(0);
+  });
+
+  it("includes policyEvents when a run records hook rule IDs", async () => {
+    const withRule = {
+      ...ok("done"),
+      toolCalls: [
+        { name: "read", status: "completed" as const, detail: "x", ruleIds: ["CG-SHELL-001"] },
+      ],
+    };
+    const runner = new ScriptedRunner([ok(planJson(1)), withRule, ok(review("PASS"))]);
+    const report = await runPipeline({
+      goal: "g",
+      workspace: "/ws",
+      testCommand: "pytest",
+      runner,
+      runTests: scriptedTests([GREEN]),
+      inspectWorkspace: workspaceAfter(IN_SCOPE).inspect,
+      prompts: PROMPTS,
+      budget: DEFAULT_BUDGET,
+    });
+    expect(report.policyEvents.some((e) => e.ruleId === "CG-SHELL-001")).toBe(true);
   });
 
   it("refuses to start on a dirty workspace, before any agent run", async () => {

@@ -155,6 +155,10 @@ async function main(): Promise<number> {
   });
   await sink.summary(report);
   printReport(report);
+  for (const ev of report.policyEvents) {
+    const detail = ev.detail ? ` ${ev.detail}` : "";
+    console.log(`policy: ${ev.ruleId} ${ev.label} ${ev.tool}${detail}`);
+  }
   return report.outcome === "PASS" ? 0 : report.outcome === "FAIL" ? 1 : 2;
 }
 

@@ -69,6 +69,7 @@ export class FileRunSink implements RunSink {
       estCostUsd: Number(report.estCostUsd.toFixed(4)),
       unpricedModels: report.unpricedModels.length ? report.unpricedModels : undefined,
       checkpointRefs: report.checkpointRefs,
+      policyEvents: report.policyEvents.length ? report.policyEvents : undefined,
       failure: report.failure
         ? {
             failedRef: report.failure.failedRef,
@@ -100,7 +101,8 @@ export function formatToolCalls(calls: ToolCallRecord[]): string {
   return calls
     .map((c, i) => {
       const detail = c.detail ? ` ${JSON.stringify(truncate(redact(c.detail)))}` : "";
-      return `${i + 1}. ${c.name}${c.status === "error" ? " (error)" : ""}${detail}`;
+      const rules = c.ruleIds?.length ? ` [${c.ruleIds.join(",")}]` : "";
+      return `${i + 1}. ${c.name}${c.status === "error" ? " (error)" : ""}${detail}${rules}`;
     })
     .join("\n");
 }

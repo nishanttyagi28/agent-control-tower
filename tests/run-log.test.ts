@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MODEL } from "../src/config.js";
+import type { PipelineReport } from "../src/pipeline.js";
 import { redact } from "../src/redact.js";
 import { FileRunSink, formatToolCalls } from "../src/run-log.js";
+import { ZERO_USAGE } from "../src/usage.js";
 import { describeToolArgs } from "../src/tool-calls.js";
 import type { ToolCallRecord } from "../src/types.js";
 
@@ -56,6 +58,38 @@ describe("tool call logging", () => {
     const line = formatToolCalls([{ name: "shell", status: "completed", detail: "x".repeat(500) }]);
     expect(line).toContain("x".repeat(200) + "... [+300 chars]");
     expect(line).not.toContain("x".repeat(201));
+  });
+
+  it("appends rule IDs to a tool call line and writes policyEvents to summary.json", async () => {
+    const line = formatToolCalls([
+      { name: "shell", status: "error", detail: "pytest", ruleIds: ["CG-SHELL-001"] },
+    ]);
+    expect(line).toContain(" [CG-SHELL-001]");
+
+    const dir = mkdtempSync(join(tmpdir(), "runlog-policy-"));
+    const sink = new FileRunSink(dir);
+    const report: PipelineReport = {
+      outcome: "PASS",
+      message: "ok",
+      reviews: [],
+      runs: [],
+      checkpointRefs: [],
+      usage: ZERO_USAGE,
+      estCostUsd: 0,
+      unpricedModels: [],
+      policyEvents: [
+        {
+          label: "coder:T1",
+          role: "coder",
+          tool: "shell",
+          ruleId: "CG-SHELL-001",
+          detail: "pytest",
+        },
+      ],
+    };
+    await sink.summary(report);
+    const summary = JSON.parse(readFileSync(join(dir, "summary.json"), "utf8"));
+    expect(summary.policyEvents).toEqual(report.policyEvents);
   });
 
   it("redacts secrets in logged commands before truncating them", async () => {

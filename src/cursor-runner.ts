@@ -2,6 +2,7 @@ import { Agent, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import { ROLE_TOOLS } from "./roles.js";
 import { describeToolArgs } from "./tool-calls.js";
 import { extractToolPaths } from "./tool-scope.js";
+import { ruleIdsFromResult, validateRoleToolList } from "./tool-gate.js";
 import type { AgentRunner, RoleRunRequest, RoleRunResult, ToolCallRecord } from "./types.js";
 
 export interface CursorRunnerOptions {
@@ -9,6 +10,8 @@ export interface CursorRunnerOptions {
   runTimeoutMs: number;
   /** Directory for the SDK's JSONL agent store (conversation checkpoints). */
   stateDir: string;
+  /** Orchestrator-approved shell commands; empty means shell tools are rejected. */
+  commandAllowlist?: readonly string[];
 }
 
 /**
@@ -23,6 +26,12 @@ export class CursorAgentRunner implements AgentRunner {
   }
 
   async run(req: RoleRunRequest): Promise<RoleRunResult> {
+    const allowlist = this.opts.commandAllowlist ?? [];
+    const refused = validateRoleToolList(req.role, ROLE_TOOLS[req.role].tools, allowlist);
+    if (refused.length > 0) {
+      return { status: "error", text: "", toolCalls: [], error: refused.join("; ") };
+    }
+
     const toolCalls: ToolCallRecord[] = [];
     let timedOut = false;
     let timer: NodeJS.Timeout | undefined;
@@ -70,10 +79,15 @@ export class CursorAgentRunner implements AgentRunner {
 
 function collectToolCall(ev: SDKMessage, out: ToolCallRecord[]): void {
   if (ev.type !== "tool_call" || ev.status === "running") return;
-  out.push({
+  const record: ToolCallRecord = {
     name: ev.name,
     status: ev.status,
     detail: describeToolArgs(ev.args),
     paths: extractToolPaths(ev.args),
-  });
+  };
+  if (ev.result !== undefined) {
+    const ruleIds = ruleIdsFromResult(ev.name, ev.status, ev.result);
+    if (ruleIds.length > 0) record.ruleIds = ruleIds;
+  }
+  out.push(record);
 }

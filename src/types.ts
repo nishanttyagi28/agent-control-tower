@@ -29,6 +29,8 @@ export interface ToolCallRecord {
   detail?: string;
   /** Filesystem paths named in the args; checked against the workspace for coder runs. */
   paths?: string[];
+  /** Rule IDs found in the tool result, e.g. a hook deny message. */
+  ruleIds?: string[];
 }
 
 export interface RoleRunResult {
