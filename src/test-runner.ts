@@ -103,3 +103,18 @@ const spawnExec: Exec = (file, args) =>
     child.on("error", (err) => done({ code: 127, output: String(err) }));
     child.on("close", (code) => done({ code: code ?? 1, output }));
   });
+
+/** Hidden acceptance tests sit outside the workspace, so pin rootdir and config explicitly. */
+export function pytestArgs(workspace: string, acceptance?: string): string[] {
+  if (!acceptance) return ["-q"];
+  return [
+    "-q",
+    "--tb=short",
+    "--rootdir",
+    workspace,
+    "-c",
+    join(workspace, "pyproject.toml"),
+    "tests",
+    resolve(acceptance),
+  ];
+}

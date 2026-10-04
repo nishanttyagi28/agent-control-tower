@@ -1,0 +1,11 @@
+[project]
+name = "durations"
+version = "0.1.0"
+description = "Duration parsing helpers (example target with hidden acceptance tests)."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"

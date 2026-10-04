@@ -5,15 +5,18 @@ import { DEFAULT_BUDGET, DEFAULT_MODEL, type Budget } from "./config.js";
 import { CursorAgentRunner } from "./cursor-runner.js";
 import { runPipeline, type PipelineReport } from "./pipeline.js";
 import { loadPrompts } from "./prompts.js";
-import { ensureVenv, pytestCommand, shellTestRunner } from "./test-runner.js";
+import { ensureVenv, pytestArgs, pytestCommand, shellTestRunner } from "./test-runner.js";
 import { FileRunSink, summarizeTools } from "./run-log.js";
 import { toolNames } from "./tool-calls.js";
 import { gitWorkspaceInspector } from "./workspace.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
-const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [--max-runs N]
-                             [--timeout-min N] [--model ID]
+const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [--acceptance DIR]
+                             [--max-runs N] [--timeout-min N] [--model ID]
+
+--acceptance DIR  extra pytest tests kept outside the workspace. Planner and coder are not
+                  told where they are; failures reach the coder through the test output.
 
 Env: CURSOR_API_KEY (required), TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q,
      venv created and pytest installed by the orchestrator)`;
@@ -23,6 +26,7 @@ async function main(): Promise<number> {
     options: {
       workspace: { type: "string", default: "examples/target" },
       "goal-file": { type: "string" },
+      acceptance: { type: "string" },
       "max-runs": { type: "string" },
       "timeout-min": { type: "string" },
       model: { type: "string" },
@@ -47,7 +51,9 @@ async function main(): Promise<number> {
     ...(values["timeout-min"] ? { runTimeoutMs: Number(values["timeout-min"]) * 60_000 } : {}),
   };
   const model = values.model ? { ...DEFAULT_MODEL, id: values.model } : DEFAULT_MODEL;
-  const testCommand = process.env["TARGET_TEST_CMD"] ?? pytestCommand(await ensureVenv(workspace));
+  const testCommand =
+    process.env["TARGET_TEST_CMD"] ??
+    pytestCommand(await ensureVenv(workspace), pytestArgs(workspace, values.acceptance));
   process.env["TARGET_TEST_CMD"] = testCommand;
 
   const stamp = new Date()

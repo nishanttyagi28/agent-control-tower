@@ -1,0 +1,1 @@
+Build `durations`, a stdlib-only Python module with `parse_duration(text) -> int` (seconds; accepts `h`, `m`, `s` units in any combination such as "1h30m", "45s", "2h 5m", case-insensitive) and `format_duration(seconds) -> str` (e.g. 5400 -> "1h 30m", 45 -> "45s", 0 -> "0s"), covered by pytest tests.

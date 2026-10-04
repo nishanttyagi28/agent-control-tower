@@ -1,6 +1,12 @@
 import { isAbsolute } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureVenv, pytestCommand, venvPythonPath, type Exec } from "../src/test-runner.js";
+import {
+  ensureVenv,
+  pytestArgs,
+  pytestCommand,
+  venvPythonPath,
+  type Exec,
+} from "../src/test-runner.js";
 
 function recordingExec(results: Record<string, number>) {
   const calls: string[] = [];
@@ -61,5 +67,24 @@ describe("ensureVenv", () => {
   it("fails loudly when the venv cannot be created", async () => {
     const { exec } = recordingExec({ "-m venv": 1 });
     await expect(ensureVenv("/w/t", { exec, exists: () => false })).rejects.toThrow(/-m venv/);
+  });
+});
+
+describe("pytestArgs", () => {
+  it("is plain -q without hidden acceptance tests", () => {
+    expect(pytestArgs("/w/t")).toEqual(["-q"]);
+  });
+
+  it("pins rootdir and config when acceptance tests live outside the workspace", () => {
+    expect(pytestArgs("/w/t", "/w/acceptance/t")).toEqual([
+      "-q",
+      "--tb=short",
+      "--rootdir",
+      "/w/t",
+      "-c",
+      "/w/t/pyproject.toml",
+      "tests",
+      "/w/acceptance/t",
+    ]);
   });
 });

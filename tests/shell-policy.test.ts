@@ -4,13 +4,23 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { evaluateShellHooks, runPolicyScript } from "./hook-harness.js";
 
-const WORKSPACES = [resolve("examples/target")];
+const WORKSPACES = [resolve("examples/target"), resolve("examples/target-hidden-spec")];
 // Commands the coder actually ran in the first sample run (runs/2026-10-04T01-45-08Z).
 const OBSERVED_ESCAPES = [
   "cd /workspace/cursor-multiagent-demo/examples/target && python3 -m pip install pytest -q && python3 -m pytest -q",
   "pip3 install pytest -q && cd /workspace/cursor-multiagent-demo/examples/target && python3 -m pytest -q",
   "apt-get install -y python3-pytest 2>/dev/null || pip3 install pytest --break-system-packages -q; cd /workspace/cursor-multiagent-demo/examples/target && python3 -m pytest -q",
 ];
+
+describe("hook copies", () => {
+  it("are identical in every example workspace", () => {
+    const read = (ws: string, f: string) => readFileSync(join(ws, ".cursor", f), "utf8");
+    for (const f of ["hooks.json", "hooks/shell_policy.py"]) {
+      const [first, ...rest] = WORKSPACES.map((ws) => read(ws, f));
+      for (const other of rest) expect(other).toBe(first);
+    }
+  });
+});
 
 describe.each(WORKSPACES)("shell policy hook in %s", (ws) => {
   const decide = (command: string) => runPolicyScript(ws, JSON.stringify({ command })).permission;
