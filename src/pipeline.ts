@@ -8,6 +8,7 @@ import {
 } from "./config.js";
 import { parsePlan, parseReview, ParseError } from "./parse.js";
 import { render, type PromptSet } from "./prompts.js";
+import { checkpointReasons, type RetryCheckpoint } from "./retry.js";
 import { tail } from "./text.js";
 import { truncate } from "./tool-calls.js";
 import { coderPathViolations, coderToolCallsSummary } from "./tool-scope.js";
@@ -192,7 +193,11 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
           plan,
           `FIX${attempt}`,
           "Address reviewer findings",
-          fixInstructions(verdict, lastTests),
+          fixInstructions(
+            checkpointReasons(verdict.reasons, reviews.at(-2)?.reasons),
+            lastTests,
+            attempt,
+          ),
           plan.tasks.flatMap((t) => t.files),
         ),
       );
@@ -202,7 +207,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       ? finish("PASS", "reviewer and tests passed")
       : finish(
           "FAIL",
-          `reviewer FAIL after ${opts.budget.maxRetries} retry: ${verdict.reasons.join("; ")}`,
+          `reviewer FAIL after ${opts.budget.maxRetries} ${opts.budget.maxRetries === 1 ? "retry" : "retries"}: ${verdict.reasons.join("; ")}`,
         );
   } catch (err) {
     if (err instanceof BudgetExhaustedError) return finish("BUDGET_EXHAUSTED", err.message);
@@ -247,10 +252,24 @@ function coderPrompt(
   });
 }
 
-function fixInstructions(r: Review, tests: TestRunResult | undefined): string {
-  const reasons = r.reasons.length
-    ? r.reasons.map((x) => `- ${x}`).join("\n")
+/**
+ * Checkpointed retry: the coder continues from the current workspace and sees only the
+ * findings that are still unresolved, not the history of every round.
+ */
+export function fixInstructions(
+  cp: RetryCheckpoint,
+  tests: TestRunResult | undefined,
+  attempt: number,
+): string {
+  const reasons = cp.unresolved.length
+    ? cp.unresolved
+        .map((x) => `- ${cp.stillOpen.includes(x) ? "[still open] " : ""}${x}`)
+        .join("\n")
     : "- (no reasons given)";
+  const resolved =
+    attempt > 1 && cp.resolvedCount > 0
+      ? `\n\n${cp.resolvedCount} finding(s) from the previous attempt are resolved; do not revisit them.`
+      : "";
   const out = tests ? tail(tests.output, LOG_TEXT_LIMIT / 3) : "(tests not run)";
-  return `The reviewer returned FAIL. Fix exactly these findings and nothing else:\n${reasons}\n\nLast test output:\n${out}`;
+  return `Retry ${attempt}. The workspace already contains the previous attempt; continue from it. Fix exactly these unresolved findings and nothing else:\n${reasons}${resolved}\n\nLast test output:\n${out}`;
 }

@@ -13,7 +13,10 @@ import { gitWorkspaceInspector } from "./workspace.js";
 const ROOT = resolve(import.meta.dirname, "..");
 
 const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [--acceptance DIR]
-                             [--max-runs N] [--timeout-min N] [--model ID]
+                             [--max-runs N] [--max-retries N] [--timeout-min N] [--model ID]
+
+--max-retries N   coder retries after a FAIL (default 1). maxRuns must cover the worst case
+                  1 + maxTasks + 1 + 2*maxRetries, e.g. --max-retries 2 needs --max-runs 8.
 
 --acceptance DIR  extra pytest tests kept outside the workspace. Planner and coder are not
                   told where they are; failures reach the coder through the test output.
@@ -28,6 +31,7 @@ async function main(): Promise<number> {
       "goal-file": { type: "string" },
       acceptance: { type: "string" },
       "max-runs": { type: "string" },
+      "max-retries": { type: "string" },
       "timeout-min": { type: "string" },
       model: { type: "string" },
       help: { type: "boolean", short: "h" },
@@ -48,6 +52,7 @@ async function main(): Promise<number> {
   const budget: Budget = {
     ...DEFAULT_BUDGET,
     ...(values["max-runs"] ? { maxRuns: Number(values["max-runs"]) } : {}),
+    ...(values["max-retries"] ? { maxRetries: Number(values["max-retries"]) } : {}),
     ...(values["timeout-min"] ? { runTimeoutMs: Number(values["timeout-min"]) * 60_000 } : {}),
   };
   const model = values.model ? { ...DEFAULT_MODEL, id: values.model } : DEFAULT_MODEL;
