@@ -1,5 +1,4 @@
 import { Agent, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
-import type { ModelSelection } from "./config.js";
 import { ROLE_TOOLS } from "./roles.js";
 import { describeToolArgs } from "./tool-calls.js";
 import { extractToolPaths } from "./tool-scope.js";
@@ -7,7 +6,6 @@ import type { AgentRunner, RoleRunRequest, RoleRunResult, ToolCallRecord } from 
 
 export interface CursorRunnerOptions {
   apiKey: string;
-  model: ModelSelection;
   runTimeoutMs: number;
   /** Directory for the SDK's JSONL agent store (conversation checkpoints). */
   stateDir: string;
@@ -33,7 +31,7 @@ export class CursorAgentRunner implements AgentRunner {
       await using agent = await Agent.create({
         apiKey: this.opts.apiKey,
         name: req.label,
-        model: this.opts.model,
+        model: req.model,
         ...ROLE_TOOLS[req.role],
         local: { cwd: req.cwd, settingSources: ["project"], store: this.store },
       });

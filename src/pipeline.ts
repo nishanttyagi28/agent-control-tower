@@ -2,7 +2,10 @@ import { RunBudget, BudgetExhaustedError } from "./budget.js";
 import type { Checkpoint, WorkspaceCheckpointer } from "./checkpoint.js";
 import {
   DIFF_PROMPT_LIMIT,
+  DEFAULT_ROLE_MODELS,
   estimateCostUsd,
+  MODEL_PRICES,
+  type RoleModels,
   LOG_TEXT_LIMIT,
   validateBudget,
   type Budget,
@@ -39,6 +42,8 @@ export interface RunRecord {
   index: number;
   role: Role;
   label: string;
+  /** Model id the run used. */
+  model: string;
   result: RoleRunResult;
 }
 
@@ -66,6 +71,8 @@ export interface PipelineOptions {
   inspectWorkspace: WorkspaceInspector;
   prompts: PromptSet;
   budget: Budget;
+  /** Model per role. Default: composer-2.5 (fast=false) for all three. */
+  models?: RoleModels;
   /**
    * Checkpoints the workspace before the run and at every review (i.e. before each retry).
    * Enables the "diff since last review" for the reviewer and the restore on failure.
@@ -88,7 +95,10 @@ export interface PipelineReport {
   failure?: FailureArtifacts;
   checkpointRefs: string[];
   usage: TokenUsage;
+  /** List-price estimate over runs whose model has a known price. */
   estCostUsd: number;
+  /** Models used without a known price; their runs are not in estCostUsd. */
+  unpricedModels: string[];
 }
 
 class RunFailedError extends Error {
@@ -129,9 +139,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
 
   const step = async (role: Role, label: string, prompt: string): Promise<RoleRunResult> => {
     budget.take(role);
-    const request: RoleRunRequest = { role, label, prompt, cwd: opts.workspace };
+    const model = (opts.models ?? DEFAULT_ROLE_MODELS)[role];
+    const request: RoleRunRequest = { role, label, prompt, cwd: opts.workspace, model };
     const result = await opts.runner.run(request);
-    const entry: RunRecord = { index: runs.length + 1, role, label, result };
+    const entry: RunRecord = { index: runs.length + 1, role, label, model: model.id, result };
     runs.push(entry);
     await opts.sink?.record(entry, request);
     if (result.status !== "finished") {
@@ -204,7 +215,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       failure,
       checkpointRefs: refs,
       usage,
-      estCostUsd: estimateCostUsd(usage),
+      ...costOf(runs),
     };
   };
 
@@ -313,6 +324,18 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       throw err;
     }
   }
+}
+
+export function costOf(runs: RunRecord[]): { estCostUsd: number; unpricedModels: string[] } {
+  let estCostUsd = 0;
+  const unpriced = new Set<string>();
+  for (const r of runs) {
+    if (!r.result.usage) continue;
+    const price = MODEL_PRICES[r.model];
+    if (price) estCostUsd += estimateCostUsd(r.result.usage, price);
+    else unpriced.add(r.model);
+  }
+  return { estCostUsd, unpricedModels: [...unpriced] };
 }
 
 /**

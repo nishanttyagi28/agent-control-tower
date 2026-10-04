@@ -1,4 +1,4 @@
-import type { TokenUsage } from "./types.js";
+import type { Role, TokenUsage } from "./types.js";
 
 export interface ModelSelection {
   id: string;
@@ -31,6 +31,53 @@ export const DEFAULT_MODEL: ModelSelection = {
   params: [{ id: "fast", value: "false" }],
 };
 
+/** One model per role. Defaults are all DEFAULT_MODEL; tiering is opt-in (ADR 0004). */
+export type RoleModels = Record<Role, ModelSelection>;
+
+export const DEFAULT_ROLE_MODELS: RoleModels = {
+  planner: DEFAULT_MODEL,
+  coder: DEFAULT_MODEL,
+  reviewer: DEFAULT_MODEL,
+};
+
+/**
+ * "id" or "id:param=value,param=value". A bare "composer-2.5" keeps fast=false. Other ids get
+ * only the params you pass; the SDK fills the rest with each param's first allowed value.
+ */
+export function parseModelSpec(spec: string): ModelSelection {
+  const [id = "", rawParams] = spec.trim().split(":", 2);
+  if (!/^[\w.-]+$/.test(id)) throw new Error(`invalid model id: ${JSON.stringify(spec)}`);
+  if (rawParams === undefined) return id === DEFAULT_MODEL.id ? DEFAULT_MODEL : { id, params: [] };
+  const params = rawParams
+    .split(",")
+    .filter(Boolean)
+    .map((kv) => {
+      const [k, v] = kv.split("=", 2);
+      if (!k || v === undefined)
+        throw new Error(`invalid model param ${JSON.stringify(kv)} in ${spec}`);
+      return { id: k.trim(), value: v.trim() };
+    });
+  return { id, params };
+}
+
+export interface ModelInputs {
+  /** --model: applies to every role. */
+  all?: string;
+  /** --planner-model / --coder-model / --reviewer-model. */
+  flags?: Partial<Record<Role, string>>;
+  /** PLANNER_MODEL / CODER_MODEL / REVIEWER_MODEL. */
+  env?: NodeJS.ProcessEnv;
+}
+
+/** Precedence per role: role flag > role env var > --model > DEFAULT_MODEL. */
+export function resolveRoleModels({ all, flags = {}, env = {} }: ModelInputs): RoleModels {
+  const pick = (role: Role) => {
+    const spec = flags[role] ?? env[`${role.toUpperCase()}_MODEL`] ?? all;
+    return spec ? parseModelSpec(spec) : DEFAULT_MODEL;
+  };
+  return { planner: pick("planner"), coder: pick("coder"), reviewer: pick("reviewer") };
+}
+
 export const DEFAULT_BUDGET: Budget = {
   maxRuns: 6,
   maxRetries: 1,
@@ -42,6 +89,9 @@ export const DEFAULT_BUDGET: Budget = {
 // On Pro, usage is drawn from the included Cursor Models pool, so this is an estimate of
 // pool consumption, not an invoice amount.
 export const COMPOSER_25_PRICE: Price = { input: 0.5, cacheRead: 0.2, cacheWrite: 0, output: 2.5 };
+
+/** Only prices verified from the pricing page are listed; others are reported as unpriced. */
+export const MODEL_PRICES: Record<string, Price> = { "composer-2.5": COMPOSER_25_PRICE };
 
 /** Used only to create the workspace venv; tests always run with the venv's absolute python. */
 export const BASE_PYTHON = "python3";

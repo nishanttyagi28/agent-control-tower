@@ -26,6 +26,7 @@ export class FileRunSink implements RunSink {
     const body = [
       `# Run ${entry.index}: ${entry.label}`,
       "",
+      `- model: ${request.model.id}${request.model.params.map((p) => ` ${p.id}=${p.value}`).join("")}`,
       `- status: ${r.status}`,
       `- duration_ms: ${r.durationMs ?? "n/a"}`,
       `- usage: ${r.usage ? JSON.stringify(r.usage) : "n/a"}`,
@@ -55,6 +56,7 @@ export class FileRunSink implements RunSink {
       runs: report.runs.map((r) => ({
         index: r.index,
         label: r.label,
+        model: r.model,
         status: r.result.status,
         durationMs: r.result.durationMs,
         usage: r.result.usage,
@@ -65,6 +67,7 @@ export class FileRunSink implements RunSink {
       tests: report.lastTests ? { exitCode: report.lastTests.exitCode } : undefined,
       usage: report.usage,
       estCostUsd: Number(report.estCostUsd.toFixed(4)),
+      unpricedModels: report.unpricedModels.length ? report.unpricedModels : undefined,
       checkpointRefs: report.checkpointRefs,
       failure: report.failure
         ? {

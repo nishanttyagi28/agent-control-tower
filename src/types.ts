@@ -1,3 +1,5 @@
+import type { ModelSelection } from "./config.js";
+
 export type Role = "planner" | "coder" | "reviewer";
 
 export interface TokenUsage {
@@ -14,6 +16,8 @@ export interface RoleRunRequest {
   label: string;
   prompt: string;
   cwd: string;
+  /** Model for this run, chosen per role by the orchestrator. */
+  model: ModelSelection;
 }
 
 export type RunStatus = "finished" | "error" | "cancelled";

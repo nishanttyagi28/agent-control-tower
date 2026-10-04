@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { DEFAULT_BUDGET, DEFAULT_MODEL, type Budget } from "./config.js";
+import { DEFAULT_BUDGET, resolveRoleModels, type Budget } from "./config.js";
 import { CursorAgentRunner } from "./cursor-runner.js";
 import { runPipeline, type PipelineReport } from "./pipeline.js";
 import { loadPrompts } from "./prompts.js";
@@ -14,7 +14,8 @@ import { gitCheckpointer } from "./checkpoint.js";
 const ROOT = resolve(import.meta.dirname, "..");
 
 const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [--acceptance DIR]
-                             [--max-runs N] [--max-retries N] [--timeout-min N] [--model ID]
+                             [--max-runs N] [--max-retries N] [--timeout-min N] [--model SPEC]
+                             [--planner-model SPEC] [--coder-model SPEC] [--reviewer-model SPEC]
 
 --max-retries N   coder retries after a FAIL (default 1). maxRuns must cover the worst case
                   1 + maxTasks + 1 + 2*maxRetries, e.g. --max-retries 2 needs --max-runs 8.
@@ -22,7 +23,10 @@ const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [
 --acceptance DIR  extra pytest tests kept outside the workspace. Planner and coder are not
                   told where they are; failures reach the coder through the test output.
 
-Env: CURSOR_API_KEY (required), TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q,
+SPEC is "id" or "id:param=value,...". Default for every role: composer-2.5 (fast=false).
+Precedence per role: --<role>-model > <ROLE>_MODEL env > --model > default.
+
+Env: CURSOR_API_KEY (required), PLANNER_MODEL, CODER_MODEL, REVIEWER_MODEL, TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q,
      venv created and pytest installed by the orchestrator)`;
 
 async function main(): Promise<number> {
@@ -35,6 +39,9 @@ async function main(): Promise<number> {
       "max-retries": { type: "string" },
       "timeout-min": { type: "string" },
       model: { type: "string" },
+      "planner-model": { type: "string" },
+      "coder-model": { type: "string" },
+      "reviewer-model": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -56,7 +63,15 @@ async function main(): Promise<number> {
     ...(values["max-retries"] ? { maxRetries: Number(values["max-retries"]) } : {}),
     ...(values["timeout-min"] ? { runTimeoutMs: Number(values["timeout-min"]) * 60_000 } : {}),
   };
-  const model = values.model ? { ...DEFAULT_MODEL, id: values.model } : DEFAULT_MODEL;
+  const models = resolveRoleModels({
+    all: values.model,
+    flags: {
+      planner: values["planner-model"],
+      coder: values["coder-model"],
+      reviewer: values["reviewer-model"],
+    },
+    env: process.env,
+  });
   const testCommand =
     process.env["TARGET_TEST_CMD"] ??
     pytestCommand(await ensureVenv(workspace), pytestArgs(workspace, values.acceptance));
@@ -71,21 +86,24 @@ async function main(): Promise<number> {
     startedAt: new Date().toISOString(),
     goal,
     workspace,
-    model,
+    models,
     budget,
     testCommand,
   });
-  console.log(`pipeline: model=${model.id} maxRuns=${budget.maxRuns} logs=${sink.dir}`);
+  console.log(
+    `pipeline: models planner=${models.planner.id} coder=${models.coder.id} ` +
+      `reviewer=${models.reviewer.id} maxRuns=${budget.maxRuns} logs=${sink.dir}`,
+  );
 
   const report = await runPipeline({
     goal,
     workspace,
     testCommand,
     budget,
+    models,
     prompts: await loadPrompts(join(ROOT, "prompts")),
     runner: new CursorAgentRunner({
       apiKey,
-      model,
       runTimeoutMs: budget.runTimeoutMs,
       stateDir: join(ROOT, "state"),
     }),
@@ -119,6 +137,9 @@ function printReport(r: PipelineReport): void {
       `cacheRead=${u.cacheReadTokens} cacheWrite=${u.cacheWriteTokens}`,
   );
   console.log(`est. cost at list price: $${r.estCostUsd.toFixed(4)}`);
+  if (r.unpricedModels.length) {
+    console.log(`  (not included, no verified list price: ${r.unpricedModels.join(", ")})`);
+  }
 }
 
 main().then(

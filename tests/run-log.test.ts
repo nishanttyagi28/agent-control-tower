@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MODEL } from "../src/config.js";
 import { redact } from "../src/redact.js";
 import { FileRunSink, formatToolCalls } from "../src/run-log.js";
 import { describeToolArgs } from "../src/tool-calls.js";
@@ -79,9 +80,16 @@ describe("tool call logging", () => {
           index: 1,
           role: "coder",
           label: "coder:T1",
+          model: "composer-2.5",
           result: { status: "finished", text: "ok", toolCalls: calls },
         },
-        { role: "coder", label: "coder:T1", prompt: `use ${ENV_SECRET}`, cwd: "/w" },
+        {
+          role: "coder",
+          label: "coder:T1",
+          prompt: `use ${ENV_SECRET}`,
+          cwd: "/w",
+          model: DEFAULT_MODEL,
+        },
       );
       const file = readdirSync(dir).find((f) => f.startsWith("01-"));
       const log = readFileSync(join(dir, file ?? ""), "utf8");
@@ -90,6 +98,7 @@ describe("tool call logging", () => {
       expect(log).not.toContain(ENV_SECRET.slice(0, 12));
       expect(log).not.toMatch(/ghp_A1b2|crsr_0123/);
       expect(log).toContain("## Tool calls");
+      expect(log).toContain("- model: composer-2.5 fast=false");
       expect(log).toMatch(/1\. shell "git push https:\/\/x:\[REDACTED\]@github.com\/o\/r"/);
       expect(log).toMatch(/2\. shell \(error\)/);
     } finally {
