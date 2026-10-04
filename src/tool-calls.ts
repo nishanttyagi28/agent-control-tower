@@ -10,10 +10,16 @@ export function describeToolArgs(args: unknown): string | undefined {
   if (args === undefined || args === null) return undefined;
   if (typeof args !== "object") return String(args);
   const a = args as Record<string, unknown>;
-  for (const key of ["command", "path", "globPattern", "pattern"]) {
-    const v = a[key];
-    if (typeof v === "string" && v) return v;
+  const str = (key: string) => (typeof a[key] === "string" && a[key] ? (a[key] as string) : "");
+  if (str("command")) return str("command");
+  // grep / glob: the pattern is the interesting part; the folder says where it looked.
+  const pattern = str("pattern") || str("globPattern");
+  if (pattern) {
+    const where = str("path") || str("targetDirectory");
+    const filter = str("glob") ? ` (glob ${str("glob")})` : "";
+    return `${JSON.stringify(pattern)}${where ? ` in ${where}` : ""}${filter}`;
   }
+  if (str("path")) return str("path");
   try {
     return JSON.stringify(args);
   } catch {

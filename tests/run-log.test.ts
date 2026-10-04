@@ -38,6 +38,16 @@ describe("tool call logging", () => {
     expect(describeToolArgs({ command: "ls", timeout: 1 })).toBe("ls");
     expect(describeToolArgs({ path: "/w/a.py" })).toBe("/w/a.py");
     expect(describeToolArgs({ q: 1 })).toBe('{"q":1}');
+  });
+
+  it("logs the grep/glob pattern, not just the folder", () => {
+    expect(describeToolArgs({ pattern: "def parse", path: "/w/t", glob: "*.py", offset: 0 })).toBe(
+      '"def parse" in /w/t (glob *.py)',
+    );
+    expect(describeToolArgs({ globPattern: "**/*acceptance*", targetDirectory: "/w/t" })).toBe(
+      '"**/*acceptance*" in /w/t',
+    );
+    expect(describeToolArgs({ pattern: "TODO" })).toBe('"TODO"');
     expect(describeToolArgs(undefined)).toBeUndefined();
   });
 
