@@ -9,6 +9,7 @@ import { ensureVenv, pytestArgs, pytestCommand, shellTestRunner } from "./test-r
 import { FileRunSink, summarizeTools } from "./run-log.js";
 import { toolNames } from "./tool-calls.js";
 import { gitWorkspaceInspector } from "./workspace.js";
+import { gitCheckpointer } from "./checkpoint.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -90,6 +91,8 @@ async function main(): Promise<number> {
     }),
     runTests: shellTestRunner(testCommand),
     inspectWorkspace: gitWorkspaceInspector,
+    // Local refs only (refs/cursor-demo/...); branches, index and HEAD are never touched.
+    checkpoints: gitCheckpointer(workspace, `refs/cursor-demo/${stamp}`),
     sink: {
       async record(entry, request) {
         const r = entry.result;

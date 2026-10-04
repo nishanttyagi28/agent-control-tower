@@ -65,10 +65,21 @@ export class FileRunSink implements RunSink {
       tests: report.lastTests ? { exitCode: report.lastTests.exitCode } : undefined,
       usage: report.usage,
       estCostUsd: Number(report.estCostUsd.toFixed(4)),
+      checkpointRefs: report.checkpointRefs,
+      failure: report.failure
+        ? {
+            failedRef: report.failure.failedRef,
+            restored: report.failure.restored,
+            diff: "failed.diff",
+          }
+        : undefined,
     };
     await writeFile(join(this.dir, "summary.json"), JSON.stringify(json, null, 2) + "\n");
     if (report.lastTests) {
       await writeFile(join(this.dir, "tests.txt"), redact(report.lastTests.output));
+    }
+    if (report.failure) {
+      await writeFile(join(this.dir, "failed.diff"), redact(report.failure.failedDiff));
     }
   }
 }

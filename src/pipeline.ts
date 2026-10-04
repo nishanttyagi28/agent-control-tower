@@ -1,4 +1,5 @@
 import { RunBudget, BudgetExhaustedError } from "./budget.js";
+import type { Checkpoint, WorkspaceCheckpointer } from "./checkpoint.js";
 import {
   DIFF_PROMPT_LIMIT,
   estimateCostUsd,
@@ -46,6 +47,15 @@ export interface RunSink {
   record(entry: RunRecord, request: RoleRunRequest): Promise<void>;
 }
 
+export interface FailureArtifacts {
+  /** Diff from the pre-pipeline state to the final (failed) state, workspace-relative. */
+  failedDiff: string;
+  /** Ref that still holds the failed state, for inspection after the restore. */
+  failedRef: string;
+  /** Paths restored to their pre-pipeline content (or removed, if the agents created them). */
+  restored: string[];
+}
+
 export interface PipelineOptions {
   goal: string;
   workspace: string;
@@ -56,6 +66,11 @@ export interface PipelineOptions {
   inspectWorkspace: WorkspaceInspector;
   prompts: PromptSet;
   budget: Budget;
+  /**
+   * Checkpoints the workspace before the run and at every review (i.e. before each retry).
+   * Enables the "diff since last review" for the reviewer and the restore on failure.
+   */
+  checkpoints?: WorkspaceCheckpointer;
   /** Abort when a retry repeats earlier failures. Default: enabled, 0.8 overlap. */
   duplicateFailure?: DuplicateFailurePolicy;
   sink?: RunSink;
@@ -69,6 +84,9 @@ export interface PipelineReport {
   runs: RunRecord[];
   lastTests?: TestRunResult;
   lastSnapshot?: WorkspaceSnapshot;
+  /** Set when the pipeline did not PASS after agents ran and checkpoints are enabled. */
+  failure?: FailureArtifacts;
+  checkpointRefs: string[];
   usage: TokenUsage;
   estCostUsd: number;
 }
@@ -99,6 +117,15 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   let lastSnapshot: WorkspaceSnapshot | undefined;
   const dup = opts.duplicateFailure ?? DEFAULT_DUPLICATE_FAILURE;
   const failures = new FailureTracker();
+  const refs: string[] = [];
+  let base: Checkpoint | undefined;
+  let lastReviewCheckpoint: Checkpoint | undefined;
+  let failure: FailureArtifacts | undefined;
+  const checkpoint = async (label: string) => {
+    const cp = await opts.checkpoints?.checkpoint(label);
+    if (cp) refs.push(cp.ref);
+    return cp;
+  };
 
   const step = async (role: Role, label: string, prompt: string): Promise<RoleRunResult> => {
     budget.take(role);
@@ -125,6 +152,16 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     lastTests = await opts.runTests(opts.workspace);
     const snap = await opts.inspectWorkspace(opts.workspace);
     lastSnapshot = snap;
+    // This checkpoint is also the pre-retry checkpoint if the review FAILs.
+    const current = await checkpoint(`review-${reviews.length + 1}`);
+    const sinceLast =
+      !opts.checkpoints || !current
+        ? "(checkpoints disabled)"
+        : lastReviewCheckpoint
+          ? (await opts.checkpoints.diff(lastReviewCheckpoint, current)) ||
+            "(no changes since last review)"
+          : "(first review: same as the full diff)";
+    lastReviewCheckpoint = current;
     const text = await step(
       "reviewer",
       `reviewer#${reviews.length + 1}`,
@@ -136,6 +173,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         test_output: tail(lastTests.output, LOG_TEXT_LIMIT / 2),
         git_status: snap.statusText || "(no changes)",
         git_diff: truncate(snap.diff || "(empty)", DIFF_PROMPT_LIMIT),
+        diff_since_last_review: truncate(sinceLast, DIFF_PROMPT_LIMIT / 2),
         tool_calls_summary: coderToolCallsSummary(
           runs.map((r) => ({ role: r.role, label: r.label, calls: r.result.toolCalls })),
         ),
@@ -151,6 +189,9 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   };
 
   const finish = (outcome: PipelineOutcome, message: string): PipelineReport => {
+    if (failure?.restored) {
+      message += ` (workspace restored, ${failure.restored.length} path(s); failed state kept at ${failure.failedRef})`;
+    }
     const usage = runs.reduce((acc, r) => addUsage(acc, r.result.usage), ZERO_USAGE);
     return {
       outcome,
@@ -160,6 +201,8 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       runs,
       lastTests,
       lastSnapshot,
+      failure,
+      checkpointRefs: refs,
       usage,
       estCostUsd: estimateCostUsd(usage),
     };
@@ -174,78 +217,101 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         `workspace has uncommitted changes before the run: ${baseline.statusText}`,
       );
     }
-    const planned = await step(
-      "planner",
-      "planner",
-      render(opts.prompts.planner, { goal: opts.goal, max_tasks: String(opts.budget.maxTasks) }),
-    );
-    plan = parsePlan(planned.text, opts.budget.maxTasks);
+    base = await checkpoint("base");
+    const report = await stages();
+    if (report.outcome !== "PASS") await restoreAfterFailure();
+    return finish(report.outcome, report.message);
+  } catch (err) {
+    await restoreAfterFailure();
+    throw err;
+  }
 
-    for (const task of plan.tasks) {
-      await step(
-        "coder",
-        `coder:${task.id}`,
-        coderPrompt(opts, plan, task.id, task.title, task.instructions, task.files),
+  /** On any non-PASS outcome: save the failed diff, then put the workspace back. */
+  async function restoreAfterFailure(): Promise<void> {
+    if (!opts.checkpoints || !base || failure) return;
+    const failed = await checkpoint("failed");
+    if (!failed) return;
+    const failedDiff = await opts.checkpoints.diff(base, failed);
+    const restored = await opts.checkpoints.restore(base);
+    failure = { failedDiff, failedRef: failed.ref, restored };
+  }
+
+  async function stages(): Promise<{ outcome: PipelineOutcome; message: string }> {
+    const result = (outcome: PipelineOutcome, message: string) => ({ outcome, message });
+    try {
+      const planned = await step(
+        "planner",
+        "planner",
+        render(opts.prompts.planner, { goal: opts.goal, max_tasks: String(opts.budget.maxTasks) }),
       );
-    }
+      plan = parsePlan(planned.text, opts.budget.maxTasks);
 
-    let verdict = await review(plan);
-    if (verdict.verdict === "FAIL") failures.observe(verdict.reasons, lastTests?.output);
-    for (
-      let attempt = 1;
-      verdict.verdict === "FAIL" && attempt <= opts.budget.maxRetries;
-      attempt++
-    ) {
-      await step(
-        "coder",
-        `coder:fix${attempt}`,
-        coderPrompt(
-          opts,
-          plan,
-          `FIX${attempt}`,
-          "Address reviewer findings",
-          fixInstructions(
-            checkpointReasons(verdict.reasons, reviews.at(-2)?.reasons),
-            lastTests,
-            attempt,
+      for (const task of plan.tasks) {
+        await step(
+          "coder",
+          `coder:${task.id}`,
+          coderPrompt(opts, plan, task.id, task.title, task.instructions, task.files),
+        );
+      }
+
+      let verdict = await review(plan);
+      if (verdict.verdict === "FAIL") failures.observe(verdict.reasons, lastTests?.output);
+      for (
+        let attempt = 1;
+        verdict.verdict === "FAIL" && attempt <= opts.budget.maxRetries;
+        attempt++
+      ) {
+        await step(
+          "coder",
+          `coder:fix${attempt}`,
+          coderPrompt(
+            opts,
+            plan,
+            `FIX${attempt}`,
+            "Address reviewer findings",
+            fixInstructions(
+              checkpointReasons(verdict.reasons, reviews.at(-2)?.reasons),
+              lastTests,
+              attempt,
+            ),
+            plan.tasks.flatMap((t) => t.files),
           ),
-          plan.tasks.flatMap((t) => t.files),
-        ),
-      );
-      verdict = await review(plan);
-      if (verdict.verdict === "FAIL") {
-        const seen = failures.observe(verdict.reasons, lastTests?.output);
-        // Only worth aborting when another retry would otherwise be spent.
-        const moreRetriesLeft = attempt < opts.budget.maxRetries;
-        if (
-          dup.enabled &&
-          moreRetriesLeft &&
-          seen.comparable > 0 &&
-          seen.overlap >= dup.overlapThreshold
-        ) {
-          return finish(
-            "DUPLICATE_FAILURE",
-            `retry ${attempt} repeated ${seen.repeated.length}/${seen.comparable} earlier ` +
-              `failure reasons (threshold ${dup.overlapThreshold}): ${seen.repeated.join("; ")}`,
-          );
+        );
+        verdict = await review(plan);
+        if (verdict.verdict === "FAIL") {
+          const seen = failures.observe(verdict.reasons, lastTests?.output);
+          // Only worth aborting when another retry would otherwise be spent.
+          const moreRetriesLeft = attempt < opts.budget.maxRetries;
+          if (
+            dup.enabled &&
+            moreRetriesLeft &&
+            seen.comparable > 0 &&
+            seen.overlap >= dup.overlapThreshold
+          ) {
+            return result(
+              "DUPLICATE_FAILURE",
+              `retry ${attempt} repeated ${seen.repeated.length}/${seen.comparable} earlier ` +
+                `failure reasons (threshold ${dup.overlapThreshold}): ${seen.repeated.join("; ")}`,
+            );
+          }
         }
       }
+      return verdict.verdict === "PASS"
+        ? result("PASS", "reviewer and tests passed")
+        : result(
+            "FAIL",
+            `reviewer FAIL after ${opts.budget.maxRetries} ${opts.budget.maxRetries === 1 ? "retry" : "retries"}: ${verdict.reasons.join("; ")}`,
+          );
+    } catch (err) {
+      if (err instanceof BudgetExhaustedError) return result("BUDGET_EXHAUSTED", err.message);
+      if (err instanceof PolicyViolationError) {
+        reviews.push({ verdict: "FAIL", reasons: err.reasons });
+        return result("FAIL", `policy violation, no retry: ${err.message}`);
+      }
+      if (err instanceof RunFailedError || err instanceof ParseError)
+        return result("ERROR", err.message);
+      throw err;
     }
-    return verdict.verdict === "PASS"
-      ? finish("PASS", "reviewer and tests passed")
-      : finish(
-          "FAIL",
-          `reviewer FAIL after ${opts.budget.maxRetries} ${opts.budget.maxRetries === 1 ? "retry" : "retries"}: ${verdict.reasons.join("; ")}`,
-        );
-  } catch (err) {
-    if (err instanceof BudgetExhaustedError) return finish("BUDGET_EXHAUSTED", err.message);
-    if (err instanceof PolicyViolationError) {
-      reviews.push({ verdict: "FAIL", reasons: err.reasons });
-      return finish("FAIL", `policy violation, no retry: ${err.message}`);
-    }
-    if (err instanceof RunFailedError || err instanceof ParseError)
-      return finish("ERROR", err.message);
-    throw err;
   }
 }
 
