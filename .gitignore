@@ -1,0 +1,22 @@
+# dependencies and local toolchains
+node_modules/
+.node22
+.venv/
+
+# SDK local agent store (conversation checkpoints)
+state/
+
+# secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# scratch and editor noise
+scratch/
+.DS_Store
