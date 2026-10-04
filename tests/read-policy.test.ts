@@ -14,6 +14,11 @@ import { evaluateReadHooks, runPolicyScript } from "./hook-harness.js";
 const WORKSPACES = [resolve("examples/target"), resolve("examples/target-hidden-spec")];
 const HIDDEN_TESTS = resolve("examples/acceptance/target-hidden-spec/test_acceptance.py");
 
+const RULE = {
+  invalid: /^CG-READ-000 INVALID_HOOK_INPUT: /,
+  outside: /^CG-READ-001 OUTSIDE_WORKSPACE: /,
+} as const;
+
 describe.each(WORKSPACES)("read policy hook in %s", (ws) => {
   const decide = (file_path: unknown) =>
     runPolicyScript(
@@ -40,13 +45,21 @@ describe.each(WORKSPACES)("read policy hook in %s", (ws) => {
   ])("denies %s", (p) => {
     const out = decide(p);
     expect(out.permission).toBe("deny");
-    expect(out.user_message).toMatch(/^Blocked by read_policy hook/);
+    expect(out.user_message).toMatch(RULE.outside);
   });
 
   it("denies malformed input (fail closed)", () => {
-    expect(runPolicyScript(ws, "not json", "read_policy.py").permission).toBe("deny");
-    expect(runPolicyScript(ws, "{}", "read_policy.py").permission).toBe("deny");
-    expect(decide(42).permission).toBe("deny");
+    const notJson = runPolicyScript(ws, "not json", "read_policy.py");
+    expect(notJson.permission).toBe("deny");
+    expect(notJson.user_message).toMatch(RULE.invalid);
+
+    const missingPath = runPolicyScript(ws, "{}", "read_policy.py");
+    expect(missingPath.permission).toBe("deny");
+    expect(missingPath.user_message).toMatch(RULE.invalid);
+
+    const badType = decide(42);
+    expect(badType.permission).toBe("deny");
+    expect(badType.user_message).toMatch(RULE.invalid);
   });
 
   it("only emits documented output fields", () => {
@@ -87,8 +100,10 @@ describe("read policy and symlinks", () => {
     writeFileSync(join(ws, "ok.txt"), "ok");
 
     const decide = (p: string) =>
-      runPolicyScript(ws, JSON.stringify({ file_path: p }), "read_policy.py").permission;
-    expect(decide(join(ws, "ok.txt"))).toBe("allow");
-    expect(decide(join(ws, "link.txt"))).toBe("deny");
+      runPolicyScript(ws, JSON.stringify({ file_path: p }), "read_policy.py");
+    expect(decide(join(ws, "ok.txt")).permission).toBe("allow");
+    const out = decide(join(ws, "link.txt"));
+    expect(out.permission).toBe("deny");
+    expect(out.user_message).toMatch(RULE.outside);
   });
 });
