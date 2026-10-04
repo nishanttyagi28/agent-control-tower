@@ -15,7 +15,7 @@ const OBSERVED_ESCAPES = [
 describe("hook copies", () => {
   it("are identical in every example workspace", () => {
     const read = (ws: string, f: string) => readFileSync(join(ws, ".cursor", f), "utf8");
-    for (const f of ["hooks.json", "hooks/shell_policy.py"]) {
+    for (const f of ["hooks.json", "hooks/shell_policy.py", "hooks/read_policy.py"]) {
       const [first, ...rest] = WORKSPACES.map((ws) => read(ws, f));
       for (const other of rest) expect(other).toBe(first);
     }

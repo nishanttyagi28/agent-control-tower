@@ -7,6 +7,13 @@
         "timeout": 10,
         "failClosed": true
       }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "python3 .cursor/hooks/read_policy.py",
+        "timeout": 10,
+        "failClosed": true
+      }
     ]
   }
 }
