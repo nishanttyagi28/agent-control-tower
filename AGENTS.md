@@ -3,8 +3,9 @@
 Instructions for AI coding agents (Cursor, Claude Code, Codex, and others) working on this
 repository. Humans should read it too: it is the contract for how changes are made here.
 
-`examples/target/` has its own `AGENTS.md`. When you work inside that directory, that file
-governs and this one does not.
+Each workspace under `examples/` (`target/`, `target-hidden-spec/`) has its own `AGENTS.md`
+and `.cursor/hooks.json`. Inside a workspace, its `AGENTS.md` governs and this one does not.
+`examples/acceptance/` holds hidden acceptance tests; never move them into a workspace.
 
 ## 1. Project overview
 
@@ -23,7 +24,8 @@ a general agent framework, any UI.
 |-- src/                 # orchestrator (library code + cli.ts entry point)
 |-- prompts/             # one prompt template per role: planner.md, coder.md, reviewer.md
 |-- tests/               # vitest unit tests; fakes only, never the network
-|-- examples/target/     # self-contained target workspace with its own AGENTS.md
+|-- examples/target*/    # self-contained workspaces, each with AGENTS.md + .cursor/hooks.json
+|-- examples/acceptance/ # hidden acceptance tests, outside every workspace
 |-- runs/<timestamp>/    # committed, trimmed logs of real pipeline runs
 |-- docs/architecture.md, docs/adr/NNNN-*.md
 `-- .github/workflows/ci.yml
@@ -52,6 +54,8 @@ Never run `npm run pipeline` unless the human asked for a real run in this sessi
 - Everything that talks to Cursor goes through the `AgentRunner` interface in `src/types.ts`.
   Only `src/cursor-runner.ts` imports runtime values from `@cursor/sdk`.
 - Model output is untrusted input: parse and validate it (`src/parse.ts`), never `eval` it.
+- Enforce policy in code or hooks, not prompts (ADR 0003). No role gets a shell tool.
+- The two copies of `.cursor/hooks/shell_policy.py` must stay identical (a test checks it).
 - Comments explain why, not what. ASCII only.
 
 ## 5. Agent operating rules
