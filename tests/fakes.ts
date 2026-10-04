@@ -6,11 +6,14 @@ import type {
   TestRunResult,
   TestRunner,
 } from "../src/types.js";
+import type { WorkspaceChange, WorkspaceInspector, WorkspaceSnapshot } from "../src/workspace.js";
 
 export const PROMPTS: PromptSet = {
   planner: "plan {{goal}} max={{max_tasks}}",
-  coder: "code {{task_id}} {{task_title}}: {{task_instructions}}",
-  reviewer: "review exit={{test_exit_code}} {{test_output}} {{plan}} {{goal}} {{test_command}}",
+  coder: "code {{task_id}} {{task_title}}: {{task_instructions}} files={{task_files}}",
+  reviewer:
+    "review exit={{test_exit_code}} {{test_output}} {{plan}} {{goal}} {{test_command}} " +
+    "status={{git_status}} diff={{git_diff}}",
 };
 
 export function ok(text: string, totalTokens = 10): RoleRunResult {
@@ -36,6 +39,7 @@ export const planJson = (n: number) =>
       id: `T${i + 1}`,
       title: `task ${i + 1}`,
       instructions: "do it",
+      files: [`f${i + 1}.py`, "tests/test_f.py"],
     })),
   }) +
   "\n```";
@@ -63,6 +67,27 @@ export function scriptedTests(results: TestRunResult[]): TestRunner {
     return next;
   };
 }
+
+const snapshot = (changes: WorkspaceChange[]): WorkspaceSnapshot => ({
+  changes,
+  statusText: changes.map((c) => `${c.status} ${c.path}`).join("\n"),
+  diff: changes.map((c) => `+++ b/${c.path}`).join("\n"),
+});
+
+/**
+ * First call (the pre-run baseline) sees a clean workspace; every later call sees `after`.
+ * Calls are counted so tests can assert when the workspace was inspected.
+ */
+export function workspaceAfter(after: WorkspaceChange[]) {
+  let calls = 0;
+  const inspect: WorkspaceInspector = async () => snapshot(calls++ === 0 ? [] : after);
+  return { inspect, calls: () => calls };
+}
+
+export const IN_SCOPE: WorkspaceChange[] = [
+  { status: "??", path: "f1.py" },
+  { status: "??", path: "tests/test_f.py" },
+];
 
 export const GREEN: TestRunResult = { exitCode: 0, output: "3 passed" };
 export const RED: TestRunResult = { exitCode: 1, output: "1 failed" };

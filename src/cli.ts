@@ -8,6 +8,7 @@ import { loadPrompts } from "./prompts.js";
 import { ensureVenv, pytestCommand, shellTestRunner } from "./test-runner.js";
 import { FileRunSink, summarizeTools } from "./run-log.js";
 import { toolNames } from "./tool-calls.js";
+import { gitWorkspaceInspector } from "./workspace.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -77,6 +78,7 @@ async function main(): Promise<number> {
       stateDir: join(ROOT, "state"),
     }),
     runTests: shellTestRunner(testCommand),
+    inspectWorkspace: gitWorkspaceInspector,
     sink: {
       async record(entry, request) {
         const r = entry.result;

@@ -3,6 +3,8 @@ import { DEFAULT_BUDGET, type Budget } from "../src/config.js";
 import { gateReview, runPipeline, type RunRecord } from "../src/pipeline.js";
 import {
   GREEN,
+  IN_SCOPE,
+  workspaceAfter,
   ok,
   planJson,
   PROMPTS,
@@ -23,6 +25,7 @@ const base = (
     testCommand: "pytest",
     runner,
     runTests: tests,
+    inspectWorkspace: workspaceAfter(IN_SCOPE).inspect,
     prompts: PROMPTS,
     budget,
   });
@@ -148,6 +151,7 @@ describe("runPipeline", () => {
       testCommand: "pytest",
       runner,
       runTests: scriptedTests([GREEN]),
+      inspectWorkspace: workspaceAfter(IN_SCOPE).inspect,
       prompts: PROMPTS,
       budget: DEFAULT_BUDGET,
       sink: { record: async (e) => void seen.push(e) },
@@ -163,5 +167,82 @@ describe("runPipeline", () => {
 describe("gateReview", () => {
   it("keeps a FAIL as FAIL even when tests are green", () => {
     expect(gateReview({ verdict: "FAIL", reasons: ["x"] }, GREEN).verdict).toBe("FAIL");
+  });
+
+  it("forces FAIL for out-of-scope changes and keeps the reviewer's reasons", () => {
+    const r = gateReview({ verdict: "PASS", reasons: ["nit"] }, GREEN, ["changed file x.py"]);
+    expect(r).toEqual({ verdict: "FAIL", reasons: ["nit", "changed file x.py"] });
+  });
+});
+
+describe("workspace diff and scope gate", () => {
+  const withWorkspace = (
+    runner: ScriptedRunner,
+    after: { status: string; path: string }[],
+    tests = scriptedTests([GREEN, GREEN]),
+  ) =>
+    runPipeline({
+      goal: "build x",
+      workspace: "/ws",
+      testCommand: "pytest",
+      runner,
+      runTests: tests,
+      inspectWorkspace: workspaceAfter(after).inspect,
+      prompts: PROMPTS,
+      budget: DEFAULT_BUDGET,
+    });
+
+  it("injects git status and diff into the reviewer prompt", async () => {
+    const runner = new ScriptedRunner([ok(planJson(1)), ok("a"), ok(review("PASS"))]);
+    await withWorkspace(runner, IN_SCOPE);
+    const prompt = runner.requests[2]?.prompt ?? "";
+    expect(prompt).toContain("status=?? f1.py\n?? tests/test_f.py");
+    expect(prompt).toContain("+++ b/f1.py");
+  });
+
+  it("auto-FAILs a reviewer PASS when a file outside the plan changed", async () => {
+    const stray = [...IN_SCOPE, { status: "??", path: "conftest.py" }];
+    const runner = new ScriptedRunner([
+      ok(planJson(1)),
+      ok("a"),
+      ok(review("PASS")),
+      ok("fix"),
+      ok(review("PASS")),
+    ]);
+    const report = await withWorkspace(runner, stray);
+
+    expect(report.reviews[0]).toEqual({
+      verdict: "FAIL",
+      reasons: ["changed file conftest.py (??) is not declared in the plan"],
+    });
+    expect(runner.requests[3]?.prompt).toContain("conftest.py");
+    expect(report.outcome).toBe("FAIL");
+  });
+
+  it("passes the declared files to the coder", async () => {
+    const runner = new ScriptedRunner([ok(planJson(1)), ok("a"), ok(review("PASS"))]);
+    await withWorkspace(runner, IN_SCOPE);
+    expect(runner.requests[1]?.prompt).toBe("code T1 task 1: do it files=f1.py, tests/test_f.py");
+  });
+
+  it("refuses to start on a dirty workspace, before any agent run", async () => {
+    const runner = new ScriptedRunner([]);
+    const report = await runPipeline({
+      goal: "g",
+      workspace: "/ws",
+      testCommand: "pytest",
+      runner,
+      runTests: scriptedTests([]),
+      inspectWorkspace: async () => ({
+        changes: [{ status: " M", path: "a.py" }],
+        statusText: " M a.py",
+        diff: "",
+      }),
+      prompts: PROMPTS,
+      budget: DEFAULT_BUDGET,
+    });
+    expect(report.outcome).toBe("ERROR");
+    expect(report.message).toContain("uncommitted changes");
+    expect(runner.requests).toHaveLength(0);
   });
 });

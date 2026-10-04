@@ -10,6 +10,8 @@ Plan summary: {{plan_summary}}
 Your task ({{task_id}}): {{task_title}}
 {{task_instructions}}
 
+Files you may create or change (anything else fails review automatically): {{task_files}}
+
 Rules:
 - Read AGENTS.md in the workspace root first and follow it exactly.
 - Do only this task, and only touch the files the task names. Do not edit AGENTS.md, GOAL.md,

@@ -48,6 +48,7 @@ export const BASE_PYTHON = "python3";
 export const PYTEST_SPEC = "pytest==9.1.1";
 export const TEST_TIMEOUT_MS = 120_000;
 export const LOG_TEXT_LIMIT = 6_000;
+export const DIFF_PROMPT_LIMIT = 8_000;
 
 /**
  * Worst case: planner + one coder run per task + reviewer + (coder + reviewer) per retry.

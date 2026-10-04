@@ -37,6 +37,14 @@ function requireString(obj: Record<string, unknown>, key: string, ctx: string): 
   return v.trim();
 }
 
+function requireFiles(obj: Record<string, unknown>, ctx: string): string[] {
+  const v = obj["files"];
+  if (!Array.isArray(v) || v.length === 0 || !v.every((f) => typeof f === "string" && f.trim())) {
+    throw new ParseError(`${ctx}: "files" must be a non-empty array of paths`);
+  }
+  return v.map((f: string) => f.trim());
+}
+
 export function parsePlan(text: string, maxTasks: number): Plan {
   const raw = extractJson(text);
   if (!isRecord(raw)) throw new ParseError("plan: expected a JSON object");
@@ -50,6 +58,7 @@ export function parsePlan(text: string, maxTasks: number): Plan {
       id: typeof t["id"] === "string" && t["id"] ? t["id"] : `T${i + 1}`,
       title: requireString(t, "title", `plan.tasks[${i}]`),
       instructions: requireString(t, "instructions", `plan.tasks[${i}]`),
+      files: requireFiles(t, `plan.tasks[${i}]`),
     };
   });
   const summary = typeof raw["summary"] === "string" ? raw["summary"] : "";

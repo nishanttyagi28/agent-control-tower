@@ -55,6 +55,8 @@ export interface PlanTask {
   id: string;
   title: string;
   instructions: string;
+  /** Workspace-relative files this task may create or modify. Enforced by the scope gate. */
+  files: string[];
 }
 
 export interface Plan {

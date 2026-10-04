@@ -8,7 +8,8 @@ Steps:
 1. Read AGENTS.md in the workspace root. It is the contract for every change here.
 2. Look at what already exists in the workspace (ls, read). Do not plan work that is already done.
 3. Split the goal into at most {{max_tasks}} small, independent, ordered tasks. Each task must be
-   completable by one coder run and must name the exact files to create or change.
+   completable by one coder run and must list in "files" every workspace-relative path it
+   will create or change. Changes to any undeclared file fail the review automatically.
    Put implementation and its tests in the same task unless AGENTS.md says otherwise.
 
 Reply with ONLY one JSON object in a ```json fenced block, no other text:
@@ -20,7 +21,8 @@ Reply with ONLY one JSON object in a ```json fenced block, no other text:
     {
       "id": "T1",
       "title": "short imperative title",
-      "instructions": "exact files, functions with signatures, behaviour incl. edge cases, tests to add"
+      "instructions": "functions with signatures, behaviour incl. edge cases, tests to add",
+      "files": ["module.py", "tests/test_module.py"]
     }
   ]
 }

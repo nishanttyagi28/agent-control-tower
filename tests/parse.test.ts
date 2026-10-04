@@ -24,9 +24,18 @@ describe("extractJson", () => {
 
 describe("parsePlan", () => {
   it("fills missing task ids and rejects tasks without instructions", () => {
-    const plan = parsePlan('{"tasks":[{"title":"a","instructions":"b"}]}', 2);
+    const plan = parsePlan('{"tasks":[{"title":"a","instructions":"b","files":["x.py"]}]}', 2);
     expect(plan.tasks[0]?.id).toBe("T1");
-    expect(() => parsePlan('{"tasks":[{"title":"a"}]}', 2)).toThrow(/instructions/);
+    expect(() => parsePlan('{"tasks":[{"title":"a","files":["x.py"]}]}', 2)).toThrow(
+      /instructions/,
+    );
+  });
+
+  it("requires every task to declare the files it will touch", () => {
+    expect(() => parsePlan('{"tasks":[{"title":"a","instructions":"b"}]}', 2)).toThrow(/files/);
+    expect(() => parsePlan('{"tasks":[{"title":"a","instructions":"b","files":[]}]}', 2)).toThrow(
+      /files/,
+    );
   });
 
   it("rejects an empty task list", () => {

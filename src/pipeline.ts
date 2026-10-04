@@ -1,8 +1,15 @@
 import { RunBudget, BudgetExhaustedError } from "./budget.js";
-import { estimateCostUsd, LOG_TEXT_LIMIT, validateBudget, type Budget } from "./config.js";
+import {
+  DIFF_PROMPT_LIMIT,
+  estimateCostUsd,
+  LOG_TEXT_LIMIT,
+  validateBudget,
+  type Budget,
+} from "./config.js";
 import { parsePlan, parseReview, ParseError } from "./parse.js";
 import { render, type PromptSet } from "./prompts.js";
 import { tail } from "./text.js";
+import { truncate } from "./tool-calls.js";
 import type {
   AgentRunner,
   Plan,
@@ -15,6 +22,7 @@ import type {
   TokenUsage,
 } from "./types.js";
 import { addUsage, ZERO_USAGE } from "./usage.js";
+import { scopeViolations, type WorkspaceInspector, type WorkspaceSnapshot } from "./workspace.js";
 
 export type PipelineOutcome = "PASS" | "FAIL" | "ERROR" | "BUDGET_EXHAUSTED";
 
@@ -36,6 +44,8 @@ export interface PipelineOptions {
   testCommand: string;
   runner: AgentRunner;
   runTests: TestRunner;
+  /** Reads git status/diff for the workspace. Feeds the reviewer and the scope gate. */
+  inspectWorkspace: WorkspaceInspector;
   prompts: PromptSet;
   budget: Budget;
   sink?: RunSink;
@@ -48,6 +58,7 @@ export interface PipelineReport {
   reviews: Review[];
   runs: RunRecord[];
   lastTests?: TestRunResult;
+  lastSnapshot?: WorkspaceSnapshot;
   usage: TokenUsage;
   estCostUsd: number;
 }
@@ -67,6 +78,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   const reviews: Review[] = [];
   let plan: Plan | undefined;
   let lastTests: TestRunResult | undefined;
+  let lastSnapshot: WorkspaceSnapshot | undefined;
 
   const step = async (role: Role, label: string, prompt: string): Promise<RoleRunResult> => {
     budget.take(role);
@@ -83,8 +95,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     return result;
   };
 
-  const review = async (): Promise<Review> => {
+  const review = async (p: Plan): Promise<Review> => {
     lastTests = await opts.runTests(opts.workspace);
+    const snap = await opts.inspectWorkspace(opts.workspace);
+    lastSnapshot = snap;
     const text = await step(
       "reviewer",
       `reviewer#${reviews.length + 1}`,
@@ -94,9 +108,15 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         test_command: opts.testCommand,
         test_exit_code: String(lastTests.exitCode),
         test_output: tail(lastTests.output, LOG_TEXT_LIMIT / 2),
+        git_status: snap.statusText || "(no changes)",
+        git_diff: truncate(snap.diff || "(empty)", DIFF_PROMPT_LIMIT),
       }),
     );
-    const r = gateReview(parseReview(text.text), lastTests);
+    const r = gateReview(
+      parseReview(text.text),
+      lastTests,
+      scopeViolations(snap.changes, p, opts.workspace),
+    );
     reviews.push(r);
     return r;
   };
@@ -110,12 +130,21 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       reviews,
       runs,
       lastTests,
+      lastSnapshot,
       usage,
       estCostUsd: estimateCostUsd(usage),
     };
   };
 
   try {
+    // A clean start makes "what changed" exactly "what the agents changed".
+    const baseline = await opts.inspectWorkspace(opts.workspace);
+    if (baseline.changes.length > 0) {
+      return finish(
+        "ERROR",
+        `workspace has uncommitted changes before the run: ${baseline.statusText}`,
+      );
+    }
     const planned = await step(
       "planner",
       "planner",
@@ -127,11 +156,11 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
       await step(
         "coder",
         `coder:${task.id}`,
-        coderPrompt(opts, plan, task.id, task.title, task.instructions),
+        coderPrompt(opts, plan, task.id, task.title, task.instructions, task.files),
       );
     }
 
-    let verdict = await review();
+    let verdict = await review(plan);
     for (
       let attempt = 1;
       verdict.verdict === "FAIL" && attempt <= opts.budget.maxRetries;
@@ -146,9 +175,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
           `FIX${attempt}`,
           "Address reviewer findings",
           fixInstructions(verdict, lastTests),
+          plan.tasks.flatMap((t) => t.files),
         ),
       );
-      verdict = await review();
+      verdict = await review(plan);
     }
     return verdict.verdict === "PASS"
       ? finish("PASS", "reviewer and tests passed")
@@ -164,15 +194,17 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   }
 }
 
-/** The test suite is the deterministic gate: a reviewer PASS cannot override failing tests. */
-export function gateReview(r: Review, tests: TestRunResult): Review {
-  if (r.verdict === "PASS" && tests.exitCode !== 0) {
-    return {
-      verdict: "FAIL",
-      reasons: [...r.reasons, `test command exited with code ${tests.exitCode}`],
-    };
-  }
-  return r;
+/**
+ * Deterministic gate over the reviewer's verdict: failing tests or any changed file outside
+ * the plan's declared files force FAIL, whatever the model said.
+ */
+export function gateReview(r: Review, tests: TestRunResult, outOfScope: string[] = []): Review {
+  const forced = [
+    ...(tests.exitCode !== 0 ? [`test command exited with code ${tests.exitCode}`] : []),
+    ...outOfScope,
+  ];
+  if (forced.length === 0) return r;
+  return { verdict: "FAIL", reasons: [...r.reasons, ...forced] };
 }
 
 function coderPrompt(
@@ -181,8 +213,10 @@ function coderPrompt(
   id: string,
   title: string,
   instructions: string,
+  files: string[],
 ): string {
   return render(opts.prompts.coder, {
+    task_files: [...new Set(files)].join(", "),
     goal: opts.goal,
     plan_summary: plan.summary || "(none)",
     task_id: id,

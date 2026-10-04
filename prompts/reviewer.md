@@ -14,9 +14,22 @@ Output (tail):
 {{test_output}}
 ```
 
+Workspace changes (`git status --porcelain`, workspace-relative):
+```
+{{git_status}}
+```
+
+Workspace diff (`git diff`, plus new files shown as diffs against /dev/null):
+```diff
+{{git_diff}}
+```
+
+The orchestrator separately fails the review if tests fail or if any changed file is not
+declared in the plan, so focus on correctness against the goal and AGENTS.md.
+
 Steps:
 1. Read AGENTS.md in the workspace root.
-2. Read the code and tests that the plan touched.
+2. Read the diff above, and open files with your read tools when the diff is not enough.
 3. Decide PASS or FAIL. FAIL only for concrete, fixable defects:
    - the test command did not exit 0
    - a requirement from the goal is missing or wrong
