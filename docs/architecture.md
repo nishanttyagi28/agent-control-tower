@@ -19,6 +19,7 @@
 | `src/workspace.ts` | `git status --porcelain` / `git diff` scoped to the workspace, and the plan-scope check. |
 | `src/redact.ts`, `src/tool-calls.ts` | Secret redaction and tool-arg rendering/truncation for logs and prompts. |
 | `src/run-log.ts` | Writes trimmed, redacted per-run markdown logs, `summary.json`, and `failed.diff` on failure. |
+| `src/replay.ts`, `src/demo-replay.ts` | Offline replay of a committed run: a fake `AgentRunner`, test runner and workspace inspector fed from `runs/<ts>/`, driven through the real `runPipeline` and gate. |
 | `examples/*/.cursor/hooks.json` | Fail-closed `beforeShellExecution` (command allowlist) and `beforeReadFile` (workspace-only reads) hooks (ADR 0003). |
 | `prompts/*.md` | One template per role, `{{placeholder}}` substitution, unknown placeholders fail. |
 

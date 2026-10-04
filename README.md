@@ -4,6 +4,11 @@ Hard boundaries, budgets and audit logs for coding agents.
 
 Runtime: `@cursor/sdk` (local agents only).
 
+![Replay of recorded run 2: budget pre-flight, reviewer FAIL, gate, one retry, PASS](docs/media/demo.gif)
+
+Replay of a recorded run (no model calls): `npm run demo:replay`. See [docs/demo.md](docs/demo.md)
+for what is replayed and what is real.
+
 ## The problem
 
 Coding agents follow instructions most of the time. "Most of the time" is not good enough
@@ -101,7 +106,8 @@ examples/target/              workspace 1 (textstats), own AGENTS.md and shell/r
 examples/target-hidden-spec/  workspace 2 (durations), goal omits one requirement, same hooks
 examples/acceptance/          hidden acceptance tests, outside every workspace
 runs/                         committed, trimmed logs of real runs
-docs/                         architecture and ADRs
+scripts/                      demo-session.sh, the terminal session behind docs/media/demo.gif
+docs/                         architecture, ADRs, demo notes and media
 ```
 
 ## Quickstart
@@ -113,6 +119,7 @@ installs pytest there. Agents never install anything.
 ```bash
 npm ci
 npm run format:check && npm run typecheck && npm test   # offline, no API calls
+npm run demo:replay                                     # replay run 2, no API calls
 
 export CURSOR_API_KEY=...                               # never commit it
 npm run pipeline                                        # examples/target; spends plan usage
