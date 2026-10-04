@@ -1,4 +1,4 @@
-# cursor-multiagent-demo
+# Agent Control Tower
 
 A small, budgeted multi-agent workflow on top of the [Cursor TypeScript SDK](https://cursor.com/docs/api/sdk/typescript).
 A TypeScript orchestrator drives three local Cursor agents (**planner**, **coder** and
