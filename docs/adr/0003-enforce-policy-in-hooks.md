@@ -43,7 +43,10 @@ Rules that matter are enforced by mechanisms the model cannot talk its way aroun
   Run 2 shows that the single retry is enough for a missed requirement.
 - The hook is not exercised by real runs while no role has a shell. Its behaviour is covered by
   unit tests that run the real script and replay run 1's commands.
-- Read tools are still not confined to the workspace (run 2: the planner globbed for the
-  hidden tests). A `beforeReadFile` hook is the next step if that matters.
+- Read tools were not confined to the workspace (run 2: the planner globbed for the hidden
+  tests). Update: each workspace now has a fail-closed `beforeReadFile` hook, and the
+  orchestrator fails any coder tool call whose path is outside the workspace. Hooks see only
+  `read`, not grep/glob. For the planner and reviewer, grep/glob outside the workspace is still
+  only visible in the logs.
 - Success: no agent tool call in a committed run log executes a command outside the
   allowlist, and the scope gate has a unit test for every failure mode.

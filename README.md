@@ -7,9 +7,12 @@ the agents work, and a hook plus the orchestrator enforce the rules that matter.
 
 The point is the engineering around the agents:
 - least-privilege tool allowlists per role, with no shell for any agent
-- a deterministic gate: tests, plus a check that only files declared in the plan changed
-- strict run and retry budgets
-- validated JSON contracts between roles
+- fail-closed hooks: a shell command allowlist and workspace-only reads
+- a deterministic gate: tests, files declared in the plan, coder paths inside the workspace
+- strict run and retry budgets, checkpointed retries, and a duplicate-failure abort
+- git checkpoints that restore the workspace on failure and keep the failed diff
+- validated JSON contracts between roles, with retry policy read from AGENTS.md
+- per-role models (all `composer-2.5` by default) and an opt-in `--interactive` mode
 - trimmed, redacted, committed run logs
 
 ## Architecture
@@ -19,32 +22,37 @@ flowchart LR
     goal[GOAL.md] --> O
     subgraph O[Orchestrator - src/pipeline.ts]
         B[Budget: 6 runs, 1 retry, 8 min/run]
-        G[Gate: tests + plan scope]
+        G[Gate: tests + plan scope + coder paths]
+        K[Checkpoints: refs/cursor-demo]
     end
     O -->|goal| P[planner<br/>read-only]
     P -->|JSON plan + files| O
     O -->|one task at a time| C[coder<br/>read + edit, no shell]
     O -->|venv pytest| T[tests + hidden acceptance]
-    O -->|plan + tests + git diff| R[reviewer<br/>read-only]
+    O -->|plan + tests + diffs + coder tool calls| R[reviewer<br/>read-only]
     R -->|PASS / FAIL JSON| O
-    P & C & R --> W[(workspace<br/>AGENTS.md + .cursor/hooks.json)]
+    P & C & R --> W[(workspace<br/>AGENTS.md + shell/read hooks)]
     O --> L[runs/&lt;timestamp&gt;/]
 ```
 
-On FAIL, the coder gets the reasons and the test output for one retry, and the reviewer runs
-once more. More detail is in [docs/architecture.md](docs/architecture.md). The decisions are in
+On FAIL, the coder gets only the unresolved reasons and the test output for a retry (one by
+default), continuing from the checkpointed workspace, and the reviewer runs again. If a retry
+repeats the same failure, the pipeline stops with `DUPLICATE_FAILURE`. If the run does not
+PASS, the workspace is restored and `runs/<ts>/failed.diff` keeps what was tried. More detail is in [docs/architecture.md](docs/architecture.md). The decisions are in
 the ADRs:
 - [0001](docs/adr/0001-local-agents-over-cloud.md): local agents
 - [0002](docs/adr/0002-run-budget.md): run budget
 - [0003](docs/adr/0003-enforce-policy-in-hooks.md): enforce policy in hooks and the orchestrator,
   not prompts
+- [0004](docs/adr/0004-per-role-model-tiering.md): per-role models and the cost/quality
+  trade-off
 
 ## Repository layout
 
 ```text
 src/                          orchestrator (pipeline, Cursor runner, gate, venv, logs, CLI)
 prompts/                      planner.md, coder.md, reviewer.md
-tests/                        vitest unit tests: scripted fake agent, real hook script, temp git repo
+tests/                        vitest unit tests: scripted fake agent, real hook scripts, temp git repos
 examples/target/              workspace 1 (textstats), own AGENTS.md and shell hook
 examples/target-hidden-spec/  workspace 2 (durations), goal omits one requirement
 examples/acceptance/          hidden acceptance tests, outside every workspace
@@ -70,8 +78,19 @@ npm run pipeline -- --help
 ```
 
 The pipeline refuses to start if the workspace has uncommitted changes, so the reviewed diff
-contains only what the agents changed. `--timeout-min` and `--max-runs` tighten the budget. A
-cap below the worst case is rejected.
+contains only what the agents changed. Other options (`--help` lists them all):
+
+| Option | Default | What it does |
+|---|---|---|
+| `--max-runs N`, `--timeout-min N` | 6, 8 | Run cap and per-run timeout. A cap below the worst case is rejected. |
+| `--max-retries N` | 1 (from AGENTS.md) | Coder retries; `--max-retries 2` needs `--max-runs 8`. |
+| `--duplicate-overlap F`, `--no-duplicate-check` | 0.8, on | Duplicate-failure abort. |
+| `--interactive`, `--confirm-threshold F` | off, 0.8 | Ask y/n before the run crossing F of the cap and before each retry. |
+| `--model`, `--planner-model`, `--coder-model`, `--reviewer-model` | composer-2.5, fast=false | Per-role models (ADR 0004); also `PLANNER_MODEL` etc. |
+
+Retry defaults come from the `json retry-policy` block in [AGENTS.md](AGENTS.md#6-retry-policy).
+Flags override it. Checkpoints are local refs under `refs/cursor-demo/`. List them with
+`git for-each-ref refs/cursor-demo` and delete them with `git update-ref -d <ref>`.
 
 ## Cost notes
 
@@ -160,9 +179,25 @@ Prompts are guidance, not enforcement. The fixes, one commit each:
 6. **Diff and scope gate.** The reviewer sees `git status` and `git diff` for the workspace.
    Any changed file that is not in the plan's declared `files` forces FAIL in TypeScript.
 
-Still open: reads outside the workspace (a `beforeReadFile` hook could confine them), and
-confirming that the SDK actually loads project hooks for local agents. That needs a run where
-a role has a shell, which this design avoids on purpose.
+### Changes since the sample runs (unit-tested, no new real runs)
+
+These were added after run 2 and are covered by unit tests with the scripted fake agent, real
+hook scripts and temporary git repos. No agent was run for them, so the sample-run numbers
+above are from the earlier orchestrator.
+
+- The reviewer sees every coder tool call (redacted). A coder path outside the workspace fails
+  deterministically; in run 2, `coder:fix1`'s grep over the repo root would have tripped it.
+- Configurable `maxRetries`, checkpointed retries that pass only unresolved reasons, and a
+  `DUPLICATE_FAILURE` abort.
+- Git checkpoints per review, a diff since the last review for the reviewer, and restore plus
+  `failed.diff` on any non-PASS outcome.
+- Per-role models, `--interactive`, the AGENTS.md retry policy block, and a `beforeReadFile`
+  hook that denies reads outside the workspace. In run 2 that hook would have blocked
+  reviewer#1 reading the hidden tests, if the SDK applies it.
+- grep/glob calls are logged with their pattern, not just the folder.
+
+Still open: confirming that the SDK actually runs project hooks (`beforeShellExecution`,
+`beforeReadFile`) for local agents. The orchestrator's own path check does not depend on that.
 
 ## License
 
