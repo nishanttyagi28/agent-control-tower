@@ -188,7 +188,6 @@ function coderPrompt(
     task_id: id,
     task_title: title,
     task_instructions: instructions,
-    test_command: opts.testCommand,
   });
 }
 

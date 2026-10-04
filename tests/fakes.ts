@@ -9,7 +9,7 @@ import type {
 
 export const PROMPTS: PromptSet = {
   planner: "plan {{goal}} max={{max_tasks}}",
-  coder: "code {{task_id}} {{task_title}}: {{task_instructions}} ({{test_command}})",
+  coder: "code {{task_id}} {{task_title}}: {{task_instructions}}",
   reviewer: "review exit={{test_exit_code}} {{test_output}} {{plan}} {{goal}} {{test_command}}",
 };
 

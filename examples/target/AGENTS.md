@@ -29,7 +29,7 @@ Do not create other files or folders (no `__init__.py` in `tests/`, no `conftest
 
 | Task | Command |
 |------|---------|
-| Run tests | `python3 -m pytest -q` (from this directory) |
+| Run tests | `.venv/bin/python -m pytest -q` (the orchestrator runs this; agents have no shell) |
 
 Do not install packages, create virtualenvs, or run git commands. A `beforeShellExecution`
 hook (`.cursor/hooks/shell_policy.py`) enforces this: only `python3 -m pytest` and
