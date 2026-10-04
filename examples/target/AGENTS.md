@@ -17,6 +17,7 @@ examples/target/
 |-- AGENTS.md            # this file (do not edit)
 |-- GOAL.md              # the goal (do not edit)
 |-- pyproject.toml       # metadata + pytest config (do not edit)
+|-- .cursor/hooks.json   # shell allowlist hook (do not edit)
 |-- textstats.py         # the module: all library code lives here
 `-- tests/
     `-- test_textstats.py
@@ -30,7 +31,9 @@ Do not create other files or folders (no `__init__.py` in `tests/`, no `conftest
 |------|---------|
 | Run tests | `python3 -m pytest -q` (from this directory) |
 
-Do not install packages, create virtualenvs, or run git commands.
+Do not install packages, create virtualenvs, or run git commands. A `beforeShellExecution`
+hook (`.cursor/hooks/shell_policy.py`) enforces this: only `python3 -m pytest` and
+`python3 -m compileall` (or the same via `.venv/bin/python`) are allowed.
 
 ## 4. Coding conventions
 
