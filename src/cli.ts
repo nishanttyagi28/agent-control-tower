@@ -1,19 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { DEFAULT_BUDGET, DEFAULT_MODEL, DEFAULT_TEST_COMMAND, type Budget } from "./config.js";
+import { DEFAULT_BUDGET, DEFAULT_MODEL, type Budget } from "./config.js";
 import { CursorAgentRunner } from "./cursor-runner.js";
 import { runPipeline, type PipelineReport } from "./pipeline.js";
 import { loadPrompts } from "./prompts.js";
+import { ensureVenv, pytestCommand, shellTestRunner } from "./test-runner.js";
 import { FileRunSink, summarizeTools } from "./run-log.js";
-import { shellTestRunner } from "./test-runner.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
 const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [--max-runs N]
                              [--timeout-min N] [--model ID]
 
-Env: CURSOR_API_KEY (required), TARGET_TEST_CMD (default "${DEFAULT_TEST_COMMAND}")`;
+Env: CURSOR_API_KEY (required), TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q,
+     venv created and pytest installed by the orchestrator)`;
 
 async function main(): Promise<number> {
   const { values } = parseArgs({
@@ -44,7 +45,8 @@ async function main(): Promise<number> {
     ...(values["timeout-min"] ? { runTimeoutMs: Number(values["timeout-min"]) * 60_000 } : {}),
   };
   const model = values.model ? { ...DEFAULT_MODEL, id: values.model } : DEFAULT_MODEL;
-  const testCommand = process.env["TARGET_TEST_CMD"] ?? DEFAULT_TEST_COMMAND;
+  const testCommand = process.env["TARGET_TEST_CMD"] ?? pytestCommand(await ensureVenv(workspace));
+  process.env["TARGET_TEST_CMD"] = testCommand;
 
   const stamp = new Date()
     .toISOString()

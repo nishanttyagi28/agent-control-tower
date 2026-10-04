@@ -43,7 +43,9 @@ export const DEFAULT_BUDGET: Budget = {
 // pool consumption, not an invoice amount.
 export const COMPOSER_25_PRICE: Price = { input: 0.5, cacheRead: 0.2, cacheWrite: 0, output: 2.5 };
 
-export const DEFAULT_TEST_COMMAND = "python3 -m pytest -q";
+/** Used only to create the workspace venv; tests always run with the venv's absolute python. */
+export const BASE_PYTHON = "python3";
+export const PYTEST_SPEC = "pytest==9.1.1";
 export const TEST_TIMEOUT_MS = 120_000;
 export const LOG_TEXT_LIMIT = 6_000;
 
