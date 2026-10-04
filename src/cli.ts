@@ -10,6 +10,7 @@ import { FileRunSink, summarizeTools } from "./run-log.js";
 import { toolNames } from "./tool-calls.js";
 import { gitWorkspaceInspector } from "./workspace.js";
 import { gitCheckpointer } from "./checkpoint.js";
+import { promptApprover } from "./approve.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -22,6 +23,10 @@ const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [
 
 --acceptance DIR  extra pytest tests kept outside the workspace. Planner and coder are not
                   told where they are; failures reach the coder through the test output.
+
+--interactive          ask y/n on stdin before the run that crosses the budget threshold and
+                       before each retry after a FAIL (anything but y, incl. EOF, stops)
+--confirm-threshold F  fraction of --max-runs that triggers the prompt (default 0.8)
 
 SPEC is "id" or "id:param=value,...". Default for every role: composer-2.5 (fast=false).
 Precedence per role: --<role>-model > <ROLE>_MODEL env > --model > default.
@@ -42,6 +47,8 @@ async function main(): Promise<number> {
       "planner-model": { type: "string" },
       "coder-model": { type: "string" },
       "reviewer-model": { type: "string" },
+      interactive: { type: "boolean", default: false },
+      "confirm-threshold": { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -111,6 +118,10 @@ async function main(): Promise<number> {
     inspectWorkspace: gitWorkspaceInspector,
     // Local refs only (refs/cursor-demo/...); branches, index and HEAD are never touched.
     checkpoints: gitCheckpointer(workspace, `refs/cursor-demo/${stamp}`),
+    ...(values.interactive ? { approve: promptApprover(process.stdin, process.stdout) } : {}),
+    ...(values["confirm-threshold"]
+      ? { confirmThreshold: Number(values["confirm-threshold"]) }
+      : {}),
     sink: {
       async record(entry, request) {
         const r = entry.result;

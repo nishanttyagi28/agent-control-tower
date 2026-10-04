@@ -1,3 +1,4 @@
+import { crossesThreshold, DEFAULT_CONFIRM_THRESHOLD, type Approver } from "./approve.js";
 import { RunBudget, BudgetExhaustedError } from "./budget.js";
 import type { Checkpoint, WorkspaceCheckpointer } from "./checkpoint.js";
 import {
@@ -36,7 +37,8 @@ import type {
 import { addUsage, ZERO_USAGE } from "./usage.js";
 import { scopeViolations, type WorkspaceInspector, type WorkspaceSnapshot } from "./workspace.js";
 
-export type PipelineOutcome = "PASS" | "FAIL" | "DUPLICATE_FAILURE" | "ERROR" | "BUDGET_EXHAUSTED";
+export type PipelineOutcome =
+  "PASS" | "FAIL" | "DUPLICATE_FAILURE" | "STOPPED_BY_USER" | "ERROR" | "BUDGET_EXHAUSTED";
 
 export interface RunRecord {
   index: number;
@@ -78,6 +80,13 @@ export interface PipelineOptions {
    * Enables the "diff since last review" for the reviewer and the restore on failure.
    */
   checkpoints?: WorkspaceCheckpointer;
+  /**
+   * Human in the loop (--interactive). Asked before the run that crosses `confirmThreshold`
+   * of maxRuns and before every retry after a FAIL. Absent: never asks (the default).
+   */
+  approve?: Approver;
+  /** Fraction of maxRuns that triggers a confirmation. Default 0.8. */
+  confirmThreshold?: number;
   /** Abort when a retry repeats earlier failures. Default: enabled, 0.8 overlap. */
   duplicateFailure?: DuplicateFailurePolicy;
   sink?: RunSink;
@@ -103,6 +112,10 @@ export interface PipelineReport {
 
 class RunFailedError extends Error {
   override name = "RunFailedError";
+}
+
+class StoppedByUserError extends Error {
+  override name = "StoppedByUserError";
 }
 
 /** A coder broke a hard policy. Retrying cannot undo it, so the pipeline fails at once. */
@@ -137,7 +150,30 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     return cp;
   };
 
+  const threshold = opts.confirmThreshold ?? DEFAULT_CONFIRM_THRESHOLD;
+  let thresholdAsked = false;
+  const ask = async (
+    reason: "budget_threshold" | "after_fail",
+    nextLabel: string,
+    detail?: string,
+  ) => {
+    if (!opts.approve) return;
+    if (crossesThreshold(budget.runsUsed + 1, opts.budget.maxRuns, threshold))
+      thresholdAsked = true;
+    const yes = await opts.approve({
+      reason,
+      nextLabel,
+      runsUsed: budget.runsUsed,
+      maxRuns: opts.budget.maxRuns,
+      detail,
+    });
+    if (!yes) throw new StoppedByUserError(`stopped by user before ${nextLabel} (${reason})`);
+  };
+
   const step = async (role: Role, label: string, prompt: string): Promise<RoleRunResult> => {
+    if (!thresholdAsked && crossesThreshold(budget.runsUsed + 1, opts.budget.maxRuns, threshold)) {
+      await ask("budget_threshold", label);
+    }
     budget.take(role);
     const model = (opts.models ?? DEFAULT_ROLE_MODELS)[role];
     const request: RoleRunRequest = { role, label, prompt, cwd: opts.workspace, model };
@@ -272,6 +308,11 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         verdict.verdict === "FAIL" && attempt <= opts.budget.maxRetries;
         attempt++
       ) {
+        await ask(
+          "after_fail",
+          `coder:fix${attempt}`,
+          verdict.reasons.map((r) => `  - ${r}`).join("\n"),
+        );
         await step(
           "coder",
           `coder:fix${attempt}`,
@@ -315,6 +356,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
           );
     } catch (err) {
       if (err instanceof BudgetExhaustedError) return result("BUDGET_EXHAUSTED", err.message);
+      if (err instanceof StoppedByUserError) return result("STOPPED_BY_USER", err.message);
       if (err instanceof PolicyViolationError) {
         reviews.push({ verdict: "FAIL", reasons: err.reasons });
         return result("FAIL", `policy violation, no retry: ${err.message}`);
