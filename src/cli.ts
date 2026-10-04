@@ -11,6 +11,7 @@ import { toolNames } from "./tool-calls.js";
 import { gitWorkspaceInspector } from "./workspace.js";
 import { gitCheckpointer } from "./checkpoint.js";
 import { promptApprover } from "./approve.js";
+import { parseRetryPolicy, resolveRetryPolicy } from "./policy.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -27,12 +28,18 @@ const USAGE = `usage: npm run pipeline -- [--workspace DIR] [--goal-file FILE] [
 --interactive          ask y/n on stdin before the run that crosses the budget threshold and
                        before each retry after a FAIL (anything but y, incl. EOF, stops)
 --confirm-threshold F  fraction of --max-runs that triggers the prompt (default 0.8)
+--duplicate-overlap F  abort a retry loop when >= F of a FAIL's reasons repeat (default 0.8)
+--no-duplicate-check   disable the duplicate-failure abort
+
+Retry defaults (maxRetries, duplicate check, confirm threshold) come from the
+"json retry-policy" block in AGENTS.md; the flags above override it.
 
 SPEC is "id" or "id:param=value,...". Default for every role: composer-2.5 (fast=false).
 Precedence per role: --<role>-model > <ROLE>_MODEL env > --model > default.
 
-Env: CURSOR_API_KEY (required), PLANNER_MODEL, CODER_MODEL, REVIEWER_MODEL, TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q,
-     venv created and pytest installed by the orchestrator)`;
+Env: CURSOR_API_KEY (required); PLANNER_MODEL, CODER_MODEL, REVIEWER_MODEL;
+     TARGET_TEST_CMD (default: <workspace>/.venv/bin/python -m pytest -q, venv created and
+     pytest installed by the orchestrator)`;
 
 async function main(): Promise<number> {
   const { values } = parseArgs({
@@ -49,6 +56,8 @@ async function main(): Promise<number> {
       "reviewer-model": { type: "string" },
       interactive: { type: "boolean", default: false },
       "confirm-threshold": { type: "string" },
+      "duplicate-overlap": { type: "string" },
+      "no-duplicate-check": { type: "boolean", default: false },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -64,10 +73,20 @@ async function main(): Promise<number> {
 
   const workspace = resolve(values.workspace);
   const goal = (await readFile(values["goal-file"] ?? join(workspace, "GOAL.md"), "utf8")).trim();
+  // Retry policy: built-in defaults < AGENTS.md "json retry-policy" block < CLI flags.
+  const policy = resolveRetryPolicy(
+    parseRetryPolicy(await readFile(join(ROOT, "AGENTS.md"), "utf8")),
+    {
+      maxRetries: values["max-retries"],
+      confirmThreshold: values["confirm-threshold"],
+      duplicateOverlap: values["duplicate-overlap"],
+      noDuplicateCheck: values["no-duplicate-check"],
+    },
+  );
   const budget: Budget = {
     ...DEFAULT_BUDGET,
     ...(values["max-runs"] ? { maxRuns: Number(values["max-runs"]) } : {}),
-    ...(values["max-retries"] ? { maxRetries: Number(values["max-retries"]) } : {}),
+    maxRetries: policy.maxRetries,
     ...(values["timeout-min"] ? { runTimeoutMs: Number(values["timeout-min"]) * 60_000 } : {}),
   };
   const models = resolveRoleModels({
@@ -95,6 +114,7 @@ async function main(): Promise<number> {
     workspace,
     models,
     budget,
+    policy,
     testCommand,
   });
   console.log(
@@ -119,9 +139,8 @@ async function main(): Promise<number> {
     // Local refs only (refs/cursor-demo/...); branches, index and HEAD are never touched.
     checkpoints: gitCheckpointer(workspace, `refs/cursor-demo/${stamp}`),
     ...(values.interactive ? { approve: promptApprover(process.stdin, process.stdout) } : {}),
-    ...(values["confirm-threshold"]
-      ? { confirmThreshold: Number(values["confirm-threshold"]) }
-      : {}),
+    confirmThreshold: policy.confirmThreshold,
+    duplicateFailure: policy.duplicateFailure,
     sink: {
       async record(entry, request) {
         const r = entry.result;

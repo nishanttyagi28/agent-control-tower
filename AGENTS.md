@@ -71,7 +71,28 @@ Never run `npm run pipeline` unless the human asked for a real run in this sessi
 7. Unit tests never call a real agent or the network.
 8. Stop and report when the same failure repeats twice. Do not loop.
 
-## 6. Safety and git
+## 6. Retry policy
+
+The orchestrator reads the block below at startup (`src/policy.ts`). Precedence per field:
+CLI flag > this block > built-in default. Unknown keys or out-of-range values stop the
+pipeline before any agent runs. The run cap (`maxRuns`, 6) is not set here; raising
+`maxRetries` also needs `--max-runs` to cover `1 + maxTasks + 1 + 2*maxRetries`.
+
+```json retry-policy
+{
+  "maxRetries": 1,
+  "duplicateFailure": { "enabled": true, "overlapThreshold": 0.8 },
+  "confirmThreshold": 0.8
+}
+```
+
+- `maxRetries` (0-5): coder retries after a FAIL. Flag: `--max-retries`.
+- `duplicateFailure`: abort with `DUPLICATE_FAILURE` when at least `overlapThreshold` of a
+  retry's FAIL reasons repeat earlier ones. Flags: `--duplicate-overlap`, `--no-duplicate-check`.
+- `confirmThreshold` (0-1]: with `--interactive`, ask before the run that crosses this
+  fraction of `maxRuns`. Flag: `--confirm-threshold`.
+
+## 7. Safety and git
 
 - Never print, log, or commit `CURSOR_API_KEY` or any other secret. Keys come from the
   environment; `.env.example` documents them.
@@ -79,7 +100,7 @@ Never run `npm run pipeline` unless the human asked for a real run in this sessi
 - Conventional Commits: `<type>(<scope>): <summary>`, types `feat fix test docs ci chore
   refactor`. Small commits that each pass the local gate.
 
-## 7. Definition of done
+## 8. Definition of done
 
 - [ ] Local gate passes (paste the summary lines).
 - [ ] New behaviour has a unit test that would fail without the change.
