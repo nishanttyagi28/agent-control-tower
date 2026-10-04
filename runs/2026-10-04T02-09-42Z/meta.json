@@ -1,0 +1,21 @@
+{
+  "startedAt": "2026-10-04T02:09:42.102Z",
+  "goal": "Build `durations`, a stdlib-only Python module with `parse_duration(text) -> int` (seconds; accepts `h`, `m`, `s` units in any combination such as \"1h30m\", \"45s\", \"2h 5m\", case-insensitive) and `format_duration(seconds) -> str` (e.g. 5400 -> \"1h 30m\", 45 -> \"45s\", 0 -> \"0s\"), covered by pytest tests.",
+  "workspace": "/workspace/cursor-multiagent-demo/examples/target-hidden-spec",
+  "model": {
+    "id": "composer-2.5",
+    "params": [
+      {
+        "id": "fast",
+        "value": "false"
+      }
+    ]
+  },
+  "budget": {
+    "maxRuns": 6,
+    "maxRetries": 1,
+    "maxTasks": 2,
+    "runTimeoutMs": 480000
+  },
+  "testCommand": "/workspace/cursor-multiagent-demo/examples/target-hidden-spec/.venv/bin/python -m pytest -q --tb=short --rootdir /workspace/cursor-multiagent-demo/examples/target-hidden-spec -c /workspace/cursor-multiagent-demo/examples/target-hidden-spec/pyproject.toml tests /workspace/cursor-multiagent-demo/examples/acceptance/target-hidden-spec"
+}
