@@ -1,0 +1,17 @@
+---
+description: Core rules for this repo. Full details live in AGENTS.md.
+globs:
+alwaysApply: true
+---
+
+Read `AGENTS.md` at the repo root before any non-trivial task; it wins over this file.
+Inside `examples/target/`, follow `examples/target/AGENTS.md` instead.
+
+- Plan first: restate the task, list exact files, wait for approval past 3 files or on CI,
+  dependency, or budget changes.
+- Never invent SDK APIs or numbers. Verify in `node_modules/@cursor/sdk` type definitions;
+  numbers come from committed `runs/*/summary.json`.
+- Unit tests use fakes only. Never call the network or a real agent from tests.
+- Never run `npm run pipeline` (it spends usage) unless the human asked for it.
+- Never print or commit secrets. Never push.
+- Gate: `npm run format:check && npm run typecheck && npm test`.
