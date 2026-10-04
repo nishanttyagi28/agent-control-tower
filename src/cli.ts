@@ -7,6 +7,7 @@ import { runPipeline, type PipelineReport } from "./pipeline.js";
 import { loadPrompts } from "./prompts.js";
 import { ensureVenv, pytestCommand, shellTestRunner } from "./test-runner.js";
 import { FileRunSink, summarizeTools } from "./run-log.js";
+import { toolNames } from "./tool-calls.js";
 
 const ROOT = resolve(import.meta.dirname, "..");
 
@@ -82,7 +83,7 @@ async function main(): Promise<number> {
         console.log(
           `  [${entry.index}] ${entry.label.padEnd(12)} ${r.status.padEnd(9)} ` +
             `${String(r.usage?.totalTokens ?? "-").padStart(7)} tok  ` +
-            `${((r.durationMs ?? 0) / 1000).toFixed(1)}s  ${summarizeTools(r.toolCalls)}`,
+            `${((r.durationMs ?? 0) / 1000).toFixed(1)}s  ${summarizeTools(toolNames(r.toolCalls))}`,
         );
         await sink.record(entry, request);
       },

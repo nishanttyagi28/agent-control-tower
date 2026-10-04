@@ -18,14 +18,21 @@ export interface RoleRunRequest {
 
 export type RunStatus = "finished" | "error" | "cancelled";
 
+export interface ToolCallRecord {
+  name: string;
+  status: "completed" | "error";
+  /** Command, path, or JSON args as reported by the SDK (untruncated, unredacted). */
+  detail?: string;
+}
+
 export interface RoleRunResult {
   status: RunStatus;
   /** Final assistant text for the run (empty when the run produced none). */
   text: string;
   usage?: TokenUsage;
   durationMs?: number;
-  /** Names of completed tool calls, in order. Kept instead of raw stream events. */
-  toolCalls: string[];
+  /** Finished tool calls, in order. Kept instead of raw stream events. */
+  toolCalls: ToolCallRecord[];
   error?: string;
   agentId?: string;
   runId?: string;

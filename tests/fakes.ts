@@ -17,7 +17,7 @@ export function ok(text: string, totalTokens = 10): RoleRunResult {
   return {
     status: "finished",
     text,
-    toolCalls: ["read"],
+    toolCalls: [{ name: "read", status: "completed", detail: "AGENTS.md" }],
     usage: {
       inputTokens: totalTokens / 2,
       outputTokens: totalTokens / 2,

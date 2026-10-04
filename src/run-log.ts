@@ -2,12 +2,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LOG_TEXT_LIMIT } from "./config.js";
 import type { PipelineReport, RunRecord, RunSink } from "./pipeline.js";
+import { redact } from "./redact.js";
 import { tail } from "./text.js";
-import type { RoleRunRequest } from "./types.js";
+import { toolNames, truncate } from "./tool-calls.js";
+import type { RoleRunRequest, ToolCallRecord } from "./types.js";
 
 /**
- * Writes one markdown file per agent run plus a summary. Logs hold the prompt, the
- * tool-call names, and the final text only; per-token stream events are not kept.
+ * Writes one markdown file per agent run plus a summary. Logs hold the prompt, each tool
+ * call (name + truncated args), and the final text; per-token stream events are not kept.
+ * Everything written passes through redact() first.
  */
 export class FileRunSink implements RunSink {
   constructor(readonly dir: string) {}
@@ -26,16 +29,20 @@ export class FileRunSink implements RunSink {
       `- status: ${r.status}`,
       `- duration_ms: ${r.durationMs ?? "n/a"}`,
       `- usage: ${r.usage ? JSON.stringify(r.usage) : "n/a"}`,
-      `- tool_calls (${r.toolCalls.length}): ${summarizeTools(r.toolCalls)}`,
-      r.error ? `- error: ${r.error}` : "",
+      `- tool_calls (${r.toolCalls.length}): ${summarizeTools(toolNames(r.toolCalls))}`,
+      r.error ? `- error: ${redact(r.error)}` : "",
+      "",
+      "## Tool calls",
+      "",
+      formatToolCalls(r.toolCalls),
       "",
       "## Prompt",
       "",
-      fence(tail(request.prompt, LOG_TEXT_LIMIT)),
+      fence(tail(redact(request.prompt), LOG_TEXT_LIMIT)),
       "",
       "## Final response",
       "",
-      fence(tail(r.text || "(empty)", LOG_TEXT_LIMIT)),
+      fence(tail(redact(r.text) || "(empty)", LOG_TEXT_LIMIT)),
       "",
     ];
     await writeFile(join(this.dir, name), body.join("\n"));
@@ -44,7 +51,7 @@ export class FileRunSink implements RunSink {
   async summary(report: PipelineReport): Promise<void> {
     const json = {
       outcome: report.outcome,
-      message: report.message,
+      message: redact(report.message),
       runs: report.runs.map((r) => ({
         index: r.index,
         label: r.label,
@@ -61,7 +68,7 @@ export class FileRunSink implements RunSink {
     };
     await writeFile(join(this.dir, "summary.json"), JSON.stringify(json, null, 2) + "\n");
     if (report.lastTests) {
-      await writeFile(join(this.dir, "tests.txt"), report.lastTests.output);
+      await writeFile(join(this.dir, "tests.txt"), redact(report.lastTests.output));
     }
   }
 }
@@ -71,6 +78,17 @@ export function summarizeTools(names: string[]): string {
   const counts = new Map<string, number>();
   for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
   return [...counts].map(([n, c]) => (c > 1 ? `${n} x${c}` : n)).join(", ") || "none";
+}
+
+/** One line per call; args are redacted before truncation so a cut cannot expose a secret. */
+export function formatToolCalls(calls: ToolCallRecord[]): string {
+  if (calls.length === 0) return "(none)";
+  return calls
+    .map((c, i) => {
+      const detail = c.detail ? ` ${JSON.stringify(truncate(redact(c.detail)))}` : "";
+      return `${i + 1}. ${c.name}${c.status === "error" ? " (error)" : ""}${detail}`;
+    })
+    .join("\n");
 }
 
 function fence(text: string): string {

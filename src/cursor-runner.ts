@@ -1,7 +1,8 @@
 import { Agent, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import type { ModelSelection } from "./config.js";
 import { ROLE_TOOLS } from "./roles.js";
-import type { AgentRunner, RoleRunRequest, RoleRunResult } from "./types.js";
+import { describeToolArgs } from "./tool-calls.js";
+import type { AgentRunner, RoleRunRequest, RoleRunResult, ToolCallRecord } from "./types.js";
 
 export interface CursorRunnerOptions {
   apiKey: string;
@@ -23,7 +24,7 @@ export class CursorAgentRunner implements AgentRunner {
   }
 
   async run(req: RoleRunRequest): Promise<RoleRunResult> {
-    const toolCalls: string[] = [];
+    const toolCalls: ToolCallRecord[] = [];
     let timedOut = false;
     let timer: NodeJS.Timeout | undefined;
     let agentId: string | undefined;
@@ -68,7 +69,7 @@ export class CursorAgentRunner implements AgentRunner {
   }
 }
 
-function collectToolCall(ev: SDKMessage, out: string[]): void {
+function collectToolCall(ev: SDKMessage, out: ToolCallRecord[]): void {
   if (ev.type !== "tool_call" || ev.status === "running") return;
-  out.push(ev.status === "error" ? `${ev.name}(error)` : ev.name);
+  out.push({ name: ev.name, status: ev.status, detail: describeToolArgs(ev.args) });
 }
