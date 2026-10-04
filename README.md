@@ -46,13 +46,13 @@ leaves a record I can read afterwards.
 
 | Problem | Mechanism in this repo |
 |---|---|
-| Agents ignore "do not install" or "do not run X" | No role gets a shell tool. Fail-closed `beforeShellExecution` hook allowlists `python -m pytest\|compileall` in case a shell is re-enabled. |
+| Agents ignore "do not install" or "do not run X" | The orchestrator refuses to start a role whose tool allowlist contains a shell tool unless an orchestrator command allowlist is given (CG-GATE-001), before any agent is created; the fail-closed shell hook is allowlist-first and every deny starts with a rule ID (CG-SHELL-001 NO_PACKAGE_INSTALL, CG-SHELL-002 NO_SYSTEM_PACKAGES, ...), so a blocked install names the rule instead of inviting another package manager. |
 | Agents read files they should not see | Per-role tool allowlists. Fail-closed `beforeReadFile` hook denies reads outside the workspace. The orchestrator fails any coder tool call whose path is outside the workspace. |
 | Reviewer verdicts are just model output | Deterministic gate in TypeScript: failing tests, a changed file not declared in the plan, or an out-of-workspace coder path forces FAIL. |
 | Retry loops burn quota | Run budget checked before the first run (`1 + maxTasks + 1 + 2*maxRetries <= maxRuns`, 6 by default) and enforced per run. A retry that repeats earlier failure reasons stops with `DUPLICATE_FAILURE`. |
 | Failed attempts leave a dirty workspace | Git checkpoints under `refs/codegovernor/` (HEAD, branches and index untouched). On any non-PASS outcome the workspace is restored and the attempt is kept as `failed.diff`. |
 | Reviewer cannot see what happened | Reviewer prompt includes the workspace diff, the diff since its last review, and every coder tool call. |
-| Runs cannot be audited | Per-run logs with the prompt, each tool call (args redacted and cut to 200 chars), final text, model and token usage, committed under `runs/`. |
+| Runs cannot be audited | Per-run logs with the prompt, each tool call (args redacted and cut to 200 chars), final text, model and token usage, committed under `runs/`. Rule IDs from denied or shell tool calls are written to the run log and `summary.json` as `policyEvents`. |
 
 ## Evidence
 
@@ -268,6 +268,13 @@ above are from the earlier orchestrator.
   `targetDirectory`. A tool that names paths differently would not be checked.
 - **Costs are estimates.** `agent.getUsage()` was not available on the account used, and only
   `composer-2.5` has a verified list price in `MODEL_PRICES`.
+- **Rule IDs and policyEvents are unit-tested only.** No real run has produced a hook denial
+  rule ID or a `policyEvents` entry yet. How the SDK reports a hook deny in a tool result
+  (status, text) is not verified, so `policyEvents` may miss real denials.
+- **Named detection is best effort; the allowlist is the control.** For example
+  `bash -c "pip install x"` and `curl -s URL | sudo bash` are denied as
+  `CG-SHELL-003 NOT_IN_ALLOWLIST` rather than with the more specific rule (both verified by
+  running the script).
 
 ## Design decisions
 
@@ -277,6 +284,8 @@ above are from the earlier orchestrator.
   orchestrator, not prompts
 - [ADR 0004](docs/adr/0004-per-role-model-tiering.md): per-role models and the cost/quality
   trade-off
+- [ADR 0005](docs/adr/0005-rule-ids-and-tool-gate.md): rule IDs on every deny and a tool gate
+  before agents start
 
 ## License
 

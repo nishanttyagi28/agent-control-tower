@@ -1,0 +1,101 @@
+{
+  "kind": "orchestrated change, not a pipeline run",
+  "task": "Rule IDs on every hook deny, broader package-manager detection, orchestrator tool gate, docs",
+  "runner": "single local agent per step via run-step.ts (@cursor/sdk, local mode, settingSources [project])",
+  "verifier": "orchestrator ran format:check, typecheck, vitest, pytest in both workspaces, and checked diff scope after each run",
+  "runs": [
+    {
+      "index": 1,
+      "label": "step1-hooks",
+      "status": "finished",
+      "durationMs": 95863,
+      "usage": {
+        "inputTokens": 474489,
+        "outputTokens": 15767,
+        "cacheReadTokens": 436352,
+        "cacheWriteTokens": 0,
+        "totalTokens": 926608
+      },
+      "toolCalls": 21,
+      "shellCalls": 8,
+      "model": "composer-2.5",
+      "params": {
+        "fast": "false"
+      },
+      "estCostUsd": 0.3639,
+      "verification": "PASS"
+    },
+    {
+      "index": 2,
+      "label": "step2-gate",
+      "status": "finished",
+      "durationMs": 78940,
+      "usage": {
+        "inputTokens": 347315,
+        "outputTokens": 9118,
+        "cacheReadTokens": 310008,
+        "cacheWriteTokens": 0,
+        "totalTokens": 666441
+      },
+      "toolCalls": 43,
+      "shellCalls": 1,
+      "model": "composer-2.5",
+      "params": {
+        "fast": "false"
+      },
+      "estCostUsd": 0.2585,
+      "verification": "FAIL (rule IDs scanned from every tool result; fixed in step2-fix1)"
+    },
+    {
+      "index": 3,
+      "label": "step2-fix1",
+      "status": "finished",
+      "durationMs": 26149,
+      "usage": {
+        "inputTokens": 65383,
+        "outputTokens": 1784,
+        "cacheReadTokens": 51393,
+        "cacheWriteTokens": 0,
+        "totalTokens": 118560
+      },
+      "toolCalls": 9,
+      "shellCalls": 1,
+      "model": "composer-2.5",
+      "params": {
+        "fast": "false"
+      },
+      "estCostUsd": 0.0474,
+      "verification": "PASS"
+    },
+    {
+      "index": 4,
+      "label": "step3-docs",
+      "status": "finished",
+      "durationMs": 77682,
+      "usage": {
+        "inputTokens": 344185,
+        "outputTokens": 6549,
+        "cacheReadTokens": 305059,
+        "cacheWriteTokens": 0,
+        "totalTokens": 655793
+      },
+      "toolCalls": 33,
+      "shellCalls": 2,
+      "model": "composer-2.5",
+      "params": {
+        "fast": "false"
+      },
+      "estCostUsd": 0.2495,
+      "verification": "PASS"
+    }
+  ],
+  "usage": {
+    "inputTokens": 1231372,
+    "outputTokens": 33218,
+    "cacheReadTokens": 1102812,
+    "cacheWriteTokens": 0,
+    "totalTokens": 2367402
+  },
+  "estCostUsd": 0.9193,
+  "note": "Costs are list-price estimates (agent.getUsage() not available on this account). Agents had a shell in the repo root; no hooks apply there."
+}

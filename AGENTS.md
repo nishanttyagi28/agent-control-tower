@@ -58,6 +58,22 @@ Never run `npm run pipeline` unless the human asked for a real run in this sessi
 - The two copies of `.cursor/hooks/shell_policy.py` must stay identical (a test checks it).
 - Comments explain why, not what. ASCII only.
 
+### Policy rule IDs
+
+The hook scripts and `src/tool-gate.ts` define rule IDs and messages; this table indexes them only.
+
+| ID | Name | Enforced by | Meaning |
+|----|------|-------------|---------|
+| CG-SHELL-000 | INVALID_HOOK_INPUT | `examples/*/.cursor/hooks/shell_policy.py` | Hook stdin is not valid JSON or `command` is missing or not a string. |
+| CG-SHELL-001 | NO_PACKAGE_INSTALL | `examples/*/.cursor/hooks/shell_policy.py` | Command installs packages (pip, npm, cargo, and similar). |
+| CG-SHELL-002 | NO_SYSTEM_PACKAGES | `examples/*/.cursor/hooks/shell_policy.py` | Command uses a system package manager or `--break-system-packages`. |
+| CG-SHELL-003 | NOT_IN_ALLOWLIST | `examples/*/.cursor/hooks/shell_policy.py` | Command is not `python3`/venv `-m pytest` or `-m compileall` (optionally after `cd <workspace> &&`). |
+| CG-SHELL-004 | NO_REMOTE_SCRIPT | `examples/*/.cursor/hooks/shell_policy.py` | `curl` or `wget` piped into a shell or interpreter. |
+| CG-READ-000 | INVALID_HOOK_INPUT | `examples/*/.cursor/hooks/read_policy.py` | Hook stdin is not valid JSON or `file_path` is missing or not a string. |
+| CG-READ-001 | OUTSIDE_WORKSPACE | `examples/*/.cursor/hooks/read_policy.py` | Resolved `file_path` is outside the workspace root. |
+| CG-GATE-001 | SHELL_TOOL_NOT_ALLOWED | `src/tool-gate.ts` | A role's tool allowlist includes a shell tool and no orchestrator command allowlist was provided. |
+| CG-GATE-002 | SHELL_CALL_RECORDED | `src/tool-gate.ts` | A shell tool call was recorded in the run log (policy event, not a deny). |
+
 ## 5. Agent operating rules
 
 1. Restate the task and what is out of scope.

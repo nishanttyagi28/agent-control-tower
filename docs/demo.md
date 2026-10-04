@@ -47,6 +47,12 @@ produced for this run.
 
 ## The video
 
+The recording predates rule IDs. Step 3 in the GIF shows the hook denying
+`pip3 install pytest --break-system-packages` with
+`Blocked by shell_policy hook: --break-system-packages is forbidden`; the same command now
+returns
+`CG-SHELL-002 NO_SYSTEM_PACKAGES: --break-system-packages is a system package install. See AGENTS.md section 3 (Commands).`
+
 `docs/media/demo.gif` is a terminal recording of [`scripts/demo-session.sh`](../scripts/demo-session.sh):
 
 1. Title card.

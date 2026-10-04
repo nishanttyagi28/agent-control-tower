@@ -15,6 +15,7 @@
 | `src/checkpoint.ts` | Git checkpoints under `refs/codegovernor/<run>/` via a throwaway index; diff between checkpoints; restore. |
 | `src/approve.ts` | `--interactive` y/n prompt and the budget-threshold rule. |
 | `src/tool-scope.ts` | Coder tool-call summary for the reviewer and the deterministic "stayed inside the workspace" check. |
+| `src/tool-gate.ts` | Rejects role tool lists that include a shell tool without an orchestrator command allowlist (CG-GATE-001); extracts rule IDs from tool results; builds `policyEvents` for the run log (CG-GATE-002 for shell calls). |
 | `src/test-runner.ts` | Creates/reuses `<workspace>/.venv`, installs pytest, runs tests with the absolute venv python (plus optional hidden acceptance tests). |
 | `src/workspace.ts` | `git status --porcelain` / `git diff` scoped to the workspace, and the plan-scope check. |
 | `src/redact.ts`, `src/tool-calls.ts` | Secret redaction and tool-arg rendering/truncation for logs and prompts. |
@@ -24,6 +25,9 @@
 | `prompts/*.md` | One template per role, `{{placeholder}}` substitution, unknown placeholders fail. |
 
 ## Flow
+
+Before the first agent run, `validateRoleTools` rejects any role whose tool allowlist includes
+a shell tool when no orchestrator command allowlist was given (CG-GATE-001).
 
 ```mermaid
 sequenceDiagram

@@ -37,6 +37,10 @@ hook (`.cursor/hooks/shell_policy.py`) enforces this: only `python3 -m pytest` a
 A `beforeReadFile` hook (`.cursor/hooks/read_policy.py`) denies reading any file outside
 this directory.
 
+Hook denials start with a rule ID and name (for example `CG-SHELL-001 NO_PACKAGE_INSTALL`
+or `CG-READ-001 OUTSIDE_WORKSPACE`); the message points here. Do not retry with another
+package manager, path or variant when a hook denies a command or read.
+
 ## 4. Coding conventions
 
 - Python 3.12, standard library only. No third-party imports anywhere, including tests
