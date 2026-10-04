@@ -8,7 +8,13 @@ import {
 } from "./config.js";
 import { parsePlan, parseReview, ParseError } from "./parse.js";
 import { render, type PromptSet } from "./prompts.js";
-import { checkpointReasons, type RetryCheckpoint } from "./retry.js";
+import {
+  checkpointReasons,
+  DEFAULT_DUPLICATE_FAILURE,
+  FailureTracker,
+  type DuplicateFailurePolicy,
+  type RetryCheckpoint,
+} from "./retry.js";
 import { tail } from "./text.js";
 import { truncate } from "./tool-calls.js";
 import { coderPathViolations, coderToolCallsSummary } from "./tool-scope.js";
@@ -26,7 +32,7 @@ import type {
 import { addUsage, ZERO_USAGE } from "./usage.js";
 import { scopeViolations, type WorkspaceInspector, type WorkspaceSnapshot } from "./workspace.js";
 
-export type PipelineOutcome = "PASS" | "FAIL" | "ERROR" | "BUDGET_EXHAUSTED";
+export type PipelineOutcome = "PASS" | "FAIL" | "DUPLICATE_FAILURE" | "ERROR" | "BUDGET_EXHAUSTED";
 
 export interface RunRecord {
   index: number;
@@ -50,6 +56,8 @@ export interface PipelineOptions {
   inspectWorkspace: WorkspaceInspector;
   prompts: PromptSet;
   budget: Budget;
+  /** Abort when a retry repeats earlier failures. Default: enabled, 0.8 overlap. */
+  duplicateFailure?: DuplicateFailurePolicy;
   sink?: RunSink;
 }
 
@@ -89,6 +97,8 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   let plan: Plan | undefined;
   let lastTests: TestRunResult | undefined;
   let lastSnapshot: WorkspaceSnapshot | undefined;
+  const dup = opts.duplicateFailure ?? DEFAULT_DUPLICATE_FAILURE;
+  const failures = new FailureTracker();
 
   const step = async (role: Role, label: string, prompt: string): Promise<RoleRunResult> => {
     budget.take(role);
@@ -180,6 +190,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     }
 
     let verdict = await review(plan);
+    if (verdict.verdict === "FAIL") failures.observe(verdict.reasons, lastTests?.output);
     for (
       let attempt = 1;
       verdict.verdict === "FAIL" && attempt <= opts.budget.maxRetries;
@@ -202,6 +213,23 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         ),
       );
       verdict = await review(plan);
+      if (verdict.verdict === "FAIL") {
+        const seen = failures.observe(verdict.reasons, lastTests?.output);
+        // Only worth aborting when another retry would otherwise be spent.
+        const moreRetriesLeft = attempt < opts.budget.maxRetries;
+        if (
+          dup.enabled &&
+          moreRetriesLeft &&
+          seen.comparable > 0 &&
+          seen.overlap >= dup.overlapThreshold
+        ) {
+          return finish(
+            "DUPLICATE_FAILURE",
+            `retry ${attempt} repeated ${seen.repeated.length}/${seen.comparable} earlier ` +
+              `failure reasons (threshold ${dup.overlapThreshold}): ${seen.repeated.join("; ")}`,
+          );
+        }
+      }
     }
     return verdict.verdict === "PASS"
       ? finish("PASS", "reviewer and tests passed")
