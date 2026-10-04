@@ -18,21 +18,27 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      # The hook tests run the real policy script with python3.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm ci
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
 
-  example-target:
-    name: example target tests (pytest)
+  example-targets:
+    name: example targets (pytest)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/target
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python -m pip install pytest==9.1.1
-      - run: python -m pytest -q
+      - name: examples/target
+        working-directory: examples/target
+        run: python -m pytest -q
+      - name: examples/target-hidden-spec (+ hidden acceptance tests)
+        working-directory: examples/target-hidden-spec
+        run: python -m pytest -q --rootdir . -c pyproject.toml tests ../acceptance/target-hidden-spec
