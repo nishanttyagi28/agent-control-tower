@@ -24,6 +24,11 @@ Workspace diff (`git diff`, plus new files shown as diffs against /dev/null):
 {{git_diff}}
 ```
 
+Every tool call the coder made (redacted, args cut to 200 chars):
+```
+{{tool_calls_summary}}
+```
+
 The orchestrator separately fails the review if tests fail or if any changed file is not
 declared in the plan, so focus on correctness against the goal and AGENTS.md.
 

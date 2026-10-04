@@ -2,6 +2,7 @@ import { Agent, JsonlLocalAgentStore, type SDKMessage } from "@cursor/sdk";
 import type { ModelSelection } from "./config.js";
 import { ROLE_TOOLS } from "./roles.js";
 import { describeToolArgs } from "./tool-calls.js";
+import { extractToolPaths } from "./tool-scope.js";
 import type { AgentRunner, RoleRunRequest, RoleRunResult, ToolCallRecord } from "./types.js";
 
 export interface CursorRunnerOptions {
@@ -71,5 +72,10 @@ export class CursorAgentRunner implements AgentRunner {
 
 function collectToolCall(ev: SDKMessage, out: ToolCallRecord[]): void {
   if (ev.type !== "tool_call" || ev.status === "running") return;
-  out.push({ name: ev.name, status: ev.status, detail: describeToolArgs(ev.args) });
+  out.push({
+    name: ev.name,
+    status: ev.status,
+    detail: describeToolArgs(ev.args),
+    paths: extractToolPaths(ev.args),
+  });
 }

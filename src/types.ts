@@ -23,6 +23,8 @@ export interface ToolCallRecord {
   status: "completed" | "error";
   /** Command, path, or JSON args as reported by the SDK (untruncated, unredacted). */
   detail?: string;
+  /** Filesystem paths named in the args; checked against the workspace for coder runs. */
+  paths?: string[];
 }
 
 export interface RoleRunResult {

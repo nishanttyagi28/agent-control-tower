@@ -10,6 +10,7 @@ import { parsePlan, parseReview, ParseError } from "./parse.js";
 import { render, type PromptSet } from "./prompts.js";
 import { tail } from "./text.js";
 import { truncate } from "./tool-calls.js";
+import { coderPathViolations, coderToolCallsSummary } from "./tool-scope.js";
 import type {
   AgentRunner,
   Plan,
@@ -67,6 +68,14 @@ class RunFailedError extends Error {
   override name = "RunFailedError";
 }
 
+/** A coder broke a hard policy. Retrying cannot undo it, so the pipeline fails at once. */
+class PolicyViolationError extends Error {
+  override name = "PolicyViolationError";
+  constructor(readonly reasons: string[]) {
+    super(reasons.join("; "));
+  }
+}
+
 /**
  * planner -> coder (one run per task) -> tests -> reviewer, with at most
  * budget.maxRetries coder fix rounds after a FAIL. Never loops beyond the budget.
@@ -96,6 +105,12 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   };
 
   const review = async (p: Plan): Promise<Review> => {
+    // Policy first: a coder that left the workspace fails without spending a reviewer run.
+    const escapes = coderPathViolations(
+      runs.map((r) => ({ role: r.role, label: r.label, calls: r.result.toolCalls })),
+      opts.workspace,
+    );
+    if (escapes.length > 0) throw new PolicyViolationError(escapes);
     lastTests = await opts.runTests(opts.workspace);
     const snap = await opts.inspectWorkspace(opts.workspace);
     lastSnapshot = snap;
@@ -110,6 +125,9 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         test_output: tail(lastTests.output, LOG_TEXT_LIMIT / 2),
         git_status: snap.statusText || "(no changes)",
         git_diff: truncate(snap.diff || "(empty)", DIFF_PROMPT_LIMIT),
+        tool_calls_summary: coderToolCallsSummary(
+          runs.map((r) => ({ role: r.role, label: r.label, calls: r.result.toolCalls })),
+        ),
       }),
     );
     const r = gateReview(
@@ -188,6 +206,10 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
         );
   } catch (err) {
     if (err instanceof BudgetExhaustedError) return finish("BUDGET_EXHAUSTED", err.message);
+    if (err instanceof PolicyViolationError) {
+      reviews.push({ verdict: "FAIL", reasons: err.reasons });
+      return finish("FAIL", `policy violation, no retry: ${err.message}`);
+    }
     if (err instanceof RunFailedError || err instanceof ParseError)
       return finish("ERROR", err.message);
     throw err;

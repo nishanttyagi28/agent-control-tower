@@ -13,7 +13,7 @@ export const PROMPTS: PromptSet = {
   coder: "code {{task_id}} {{task_title}}: {{task_instructions}} files={{task_files}}",
   reviewer:
     "review exit={{test_exit_code}} {{test_output}} {{plan}} {{goal}} {{test_command}} " +
-    "status={{git_status}} diff={{git_diff}}",
+    "status={{git_status}} diff={{git_diff}} calls={{tool_calls_summary}}",
 };
 
 export function ok(text: string, totalTokens = 10): RoleRunResult {
